@@ -56,8 +56,8 @@ class ImagesDataLoader(Dataset):
         love_paths = list(open(base_path + "/" + love_metadata))
         hate_paths = list(open(base_path + "/" + hate_metadata))
 
-        love_paths = [[x.strip(), 0.0] for x in love_paths]
-        hate_paths = [[x.strip(), 1.0] for x in hate_paths]
+        love_paths = [[x.strip("\n"), 0.0] for x in love_paths]
+        hate_paths = [[x.strip("\n"), 1.0] for x in hate_paths]
 
         self.data = love_paths + hate_paths
 
@@ -70,6 +70,9 @@ class ImagesDataLoader(Dataset):
         path = self.base_path + "/" + self.data[index][0]
         # print(path)
         image = cv2.imread(path)
+
+        assert image is not None
+
         hate = self.data[index][1]
 
         sample = {'image': image, "class": hate}

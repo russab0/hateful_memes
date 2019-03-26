@@ -2,4 +2,4 @@
 
 Deep Learning Applied to Hate Meme Detection
 
-Multimodal classification (text + image) 
+Multimodal classification (text + image)
