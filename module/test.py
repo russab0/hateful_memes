@@ -80,21 +80,21 @@ class ImagesDataLoader(Dataset):
         return sample
 
 
-if __name__ == '__main__':
-
-    transform = transforms.Compose([Rescale((224, 224)),
-                                    ToTensor()])
-
-    images_dataset = ImagesDataLoader("imagesList.txt", "imagesList.txt", "data/hate_memes_GI", transform)
-
-    dataloader = DataLoader(images_dataset, batch_size=10, shuffle=True)
-
-    for batch in dataloader:
-
-        print(type(batch))
-
-        input_batch = batch["image"]
-        target_batch = batch["class"]
+# if __name__ == '__main__':
+#
+#     transform = transforms.Compose([Rescale((224, 224)),
+#                                     ToTensor()])
+#
+#     images_dataset = ImagesDataLoader("imagesList.txt", "imagesList.txt", "data/hate_memes_GI", transform)
+#
+#     dataloader = DataLoader(images_dataset, batch_size=10, shuffle=True)
+#
+#     for batch in dataloader:
+#
+#         print(type(batch))
+#
+#         input_batch = batch["image"]
+#         target_batch = batch["class"]
 
 
 
