@@ -3,6 +3,7 @@ from torchvision import transforms
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
 import cv2
+import pytesseract
 
 import torch
 
@@ -10,7 +11,8 @@ class ToTensor(object):
     """Convert ndarrays in sample to Tensors."""
 
     def __call__(self, sample):
-        image, hate = sample['image'], sample['class']
+
+        image, text, hate = sample['image'], sample["text"], sample['class']
 
         # swap color axis because
         # numpy image: H x W x C
@@ -21,8 +23,16 @@ class ToTensor(object):
         image = image.float()
         image /= 255
 
+        text = torch.tensor(text, dtype=torch.long)
+
+        print(text.size())
+        print(text)
+        quit()
+        text_full = torch.zeros()
+
         return {'image': image,
-                'class': torch.tensor(hate)}
+                'class': torch.tensor(hate),
+                'text': text}
 
 
 class Rescale(object):
@@ -47,6 +57,24 @@ class Rescale(object):
 
         return sample
 
+class Tokenize(object):
+
+    def __init__(self, tokenizer, dataloader):
+
+        self.tokenizer = tokenizer
+        # self.dataloader = dataloader
+
+    def __call__(self, sample):
+
+        tokens = self.tokenizer.tokenize(sample["text"])
+        input_ids = self.tokenizer.convert_tokens_to_ids(tokens)
+
+        # self.dataloader.max_length = max(self.dataloader.max_length, len(input_ids))
+
+        sample["text"] = input_ids
+
+        return sample
+
 class ImagesDataLoader(Dataset):
     def __init__(self, love_metadata, hate_metadata, base_path, transform=None):
 
@@ -61,6 +89,8 @@ class ImagesDataLoader(Dataset):
 
         self.data = love_paths + hate_paths
 
+        self.max_length = -1
+
     def __len__(self):
 
         return len(self.data)
@@ -70,12 +100,14 @@ class ImagesDataLoader(Dataset):
         path = self.base_path + "/" + self.data[index][0]
         # print(path)
         image = cv2.imread(path)
+        text = pytesseract.image_to_string(image)
+        text = text.replace("\n", "")
 
         assert image is not None
 
         hate = self.data[index][1]
 
-        sample = {'image': image, "class": hate}
+        sample = {'image': image, "text": text, "class": hate}
 
         if self.transform:
             sample = self.transform(sample)
