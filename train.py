@@ -13,6 +13,8 @@ from pytorch_pretrained_bert.modeling import BertModel
 
 import time
 
+from tensorboardX import SummaryWriter
+
 
 class MultimodalClassifier(nn.Module):
     def __init__(self, image_feat_model, text_feat_model, TOTAL_FEATURES, hidden_size):
@@ -27,7 +29,7 @@ class MultimodalClassifier(nn.Module):
             nn.Linear(hidden_size, hidden_size),
             nn.ReLU(),
             nn.Linear(hidden_size, 1),
-            nn.Softmax()
+            # nn.Softmax()
         )
 
 
@@ -62,6 +64,7 @@ class MultimodalClassifier(nn.Module):
 if __name__ == '__main__':
 
     start_time = time.time()
+    writer = SummaryWriter()
 
     # Configuring CUDA / CPU execution
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
@@ -101,9 +104,11 @@ if __name__ == '__main__':
     dataloader = DataLoader(images_dataset, batch_size=10, shuffle=True, collate_fn=test.custom_collate)
 
 
-    criterion = nn.CrossEntropyLoss()
+    # criterion = nn.CrossEntropyLoss()
+    criterion = nn.MSELoss()
     optimizer = torch.optim.SGD(full_model.classifier.parameters(), lr=0.01, momentum=0.9)
 
+    iteration = 0
 
     for i in range(N_EPOCHS):
 
@@ -122,10 +127,14 @@ if __name__ == '__main__':
 
             pred = full_model(image_batch, text_batch)
 
+            #
+            # print((pred.type()))
+            # print((target_batch.type()))
+            # quit()
 
-            print((pred.type()))
-            print((target_batch.type()))
-            quit()
+
+            # pred = pred.long()
+            # target_batch = target_batch.long()
 
             loss = criterion(pred, target_batch)
 
@@ -133,9 +142,14 @@ if __name__ == '__main__':
 
             optimizer.step()
 
+            writer.add_scalar('logs/scalar1', loss, iteration)
+            iteration += 1
+
             print(pred)
             print(loss)
 
     end_time = time.time()
     print("Elapsed Time:", end_time - start_time)
+
+    writer.close()
 
