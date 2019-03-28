@@ -25,11 +25,6 @@ class ToTensor(object):
 
         text = torch.tensor(text, dtype=torch.long)
 
-        print(text.size())
-        print(text)
-        quit()
-        text_full = torch.zeros()
-
         return {'image': image,
                 'class': torch.tensor(hate),
                 'text': text}
@@ -59,10 +54,9 @@ class Rescale(object):
 
 class Tokenize(object):
 
-    def __init__(self, tokenizer, dataloader):
+    def __init__(self, tokenizer):
 
         self.tokenizer = tokenizer
-        # self.dataloader = dataloader
 
     def __call__(self, sample):
 
@@ -113,6 +107,24 @@ class ImagesDataLoader(Dataset):
             sample = self.transform(sample)
 
         return sample
+
+def custom_collate(batch):
+
+    batch2 = {"image": batch[0]["image"].unsqueeze(0),
+              "class": batch[0]["class"].unsqueeze(0)}
+
+    txt = [batch[0]["text"]]
+
+    for b in batch[1:]:
+        batch2["image"] = torch.cat((batch2["image"], b["image"].unsqueeze(0)))
+        batch2["class"] = torch.cat((batch2["class"], b["class"].unsqueeze(0)))
+        txt.append(b["text"])
+
+    batch2["text"] = torch.nn.utils.rnn.pad_sequence(txt, batch_first=True)
+    del batch
+
+    return batch2
+
 
 
 # if __name__ == '__main__':
