@@ -94,7 +94,7 @@ class ImagesDataLoader(Dataset):
         path = self.base_path + "/" + self.data[index][0]
         # print(path)
         image = cv2.imread(path)
-        text = pytesseract.image_to_string(image)
+        text = pytesseract.image_to_string(image, config='--oem 1')
         text = text.replace("\n", "")
 
         assert image is not None

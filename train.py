@@ -51,20 +51,11 @@ class MultimodalClassifier(nn.Module):
 
         return out
 
-        #
-        # print(fusion.size())
-        #
-        # print(cat_size)
-
-
-
-        # return image_features, text_features
-
 
 if __name__ == '__main__':
 
     start_time = time.time()
-    writer = SummaryWriter()
+    writer = SummaryWriter("logs/testing3")
 
     # Configuring CUDA / CPU execution
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
@@ -131,7 +122,6 @@ if __name__ == '__main__':
             # print((pred.type()))
             # print((target_batch.type()))
             # quit()
-
 
             # pred = pred.long()
             # target_batch = target_batch.long()
