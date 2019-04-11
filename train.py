@@ -15,6 +15,8 @@ import time
 
 from tensorboardX import SummaryWriter
 
+from tqdm import tqdm
+
 
 class MultimodalClassifier(nn.Module):
     def __init__(self, image_feat_model, text_feat_model, TOTAL_FEATURES, hidden_size):
@@ -51,11 +53,54 @@ class MultimodalClassifier(nn.Module):
 
         return out
 
+"Credit to https://gist.github.com/kyamagu/73ab34cbe12f3db807a314019062ad43"
+def accuracy(output, target):
+    """Computes the accuracy for multiple binary predictions"""
+    pred = output >= 0.5
+    truth = target >= 0.5
+    acc = pred.eq(truth).sum()
+    return acc
+
+def validate(dataloader_valid, device):
+
+    for batch in dataloader_valid:
+
+        image_batch = batch["image"].to(device)
+        text_batch = batch["text"].to(device)
+        target_batch = batch["class"].to(device)
+        target_batch = target_batch.unsqueeze(1)
+
+        acc = 0
+        i = 0
+
+        with torch.no_grad():
+
+            pred = full_model(image_batch, text_batch)
+            acc += accuracy(pred, target_batch)
+            i += target_batch.numel()
+            kk = acc.float()/i
+    return kk
+
 
 if __name__ == '__main__':
 
+    HIDDEN_SIZE = 100
+    N_EPOCHS = 5
+    BATCH_SIZE = 30
+
+    TRAIN_METADATA_HATE = "hateMemesList.txt.train"
+    TRAIN_METADATA_GOOD = "redditMemesList.txt.train"
+    VALID_METADATA_HATE = "hateMemesList.txt.valid"
+    VALID_METADATA_GOOD = "redditMemesList.txt.valid"
+    BASE_PATH = "data/train_data"
+    MODEL_SAVE = "models/classifier2.pt"
+
+    # logname = "H100x4_IF1000"
+    logname = "H100x4_IF4098"
+
+
     start_time = time.time()
-    writer = SummaryWriter("logs/testing3")
+    writer = SummaryWriter("logs/" + logname)
 
     # Configuring CUDA / CPU execution
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
@@ -63,6 +108,8 @@ if __name__ == '__main__':
 
     # Get image descriptor
     VGG16_features = torchvision.models.vgg16(pretrained=True)
+    VGG16_features.classifier = VGG16_features.classifier[:-3]
+
     VGG16_features.to(device)
 
 
@@ -73,14 +120,12 @@ if __name__ == '__main__':
     bert_model = BertModel.from_pretrained("bert-base-multilingual-cased")
     bert_model.to(device)
 
-
     # VGG16 output --> 1000 features
+    # VGG16 -1 layer --> 4096 features
     # BERT text embedder --> 768 features
-    # Total = 1768
 
-    IMAGE_AND_TEXT_FEATURES = 1768
-    HIDDEN_SIZE = 1000
-    N_EPOCHS = 3
+    # IMAGE_AND_TEXT_FEATURES = 1768
+    IMAGE_AND_TEXT_FEATURES = 4864
 
     full_model = MultimodalClassifier(VGG16_features, bert_model,
                                       IMAGE_AND_TEXT_FEATURES, HIDDEN_SIZE)
@@ -90,9 +135,13 @@ if __name__ == '__main__':
                                     test.Tokenize(tokenizer),
                                     test.ToTensor()])
 
-    images_dataset = test.ImagesDataLoader("redditMemesList.txt", "hateMemesList.txt", "data/train_data", transform)
+    train_dataset = test.ImagesDataLoader(TRAIN_METADATA_GOOD, TRAIN_METADATA_HATE, BASE_PATH, transform)
+    valid_dataset = test.ImagesDataLoader(VALID_METADATA_GOOD, VALID_METADATA_HATE, BASE_PATH, transform)
 
-    dataloader = DataLoader(images_dataset, batch_size=10, shuffle=True, collate_fn=test.custom_collate)
+    DATASET_LEN = train_dataset.__len__()
+
+    dataloader_train = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, collate_fn=test.custom_collate)
+    dataloader_valid = DataLoader(valid_dataset, batch_size=BATCH_SIZE, shuffle=True, collate_fn=test.custom_collate)
 
 
     # criterion = nn.CrossEntropyLoss()
@@ -103,28 +152,18 @@ if __name__ == '__main__':
 
     for i in range(N_EPOCHS):
 
-        for batch in dataloader:
+        epoch_init = time.time()
+        pbar = tqdm(total=DATASET_LEN)
+        for batch in dataloader_train:
 
-
-
-            print("batch")
             image_batch = batch["image"].to(device)
             text_batch = batch["text"].to(device)
             target_batch = batch["class"].to(device)
             target_batch = target_batch.unsqueeze(1)
 
-
             optimizer.zero_grad()
 
             pred = full_model(image_batch, text_batch)
-
-            #
-            # print((pred.type()))
-            # print((target_batch.type()))
-            # quit()
-
-            # pred = pred.long()
-            # target_batch = target_batch.long()
 
             loss = criterion(pred, target_batch)
 
@@ -132,11 +171,27 @@ if __name__ == '__main__':
 
             optimizer.step()
 
-            writer.add_scalar('logs/scalar1', loss, iteration)
+            writer.add_scalar('train/mse', loss, iteration)
             iteration += 1
 
-            print(pred)
-            print(loss)
+            pbar.update(BATCH_SIZE)
+
+            # print(pred)
+
+        epoch_end = time.time()
+
+        print("Epoch time elapsed:", epoch_end - epoch_init)
+
+        print("Saving full model to " + MODEL_SAVE)
+        torch.save(full_model.state_dict(), MODEL_SAVE)
+        print("Starting Validation")
+
+        valid_init = time.time()
+        acc = validate(dataloader_valid, device)
+        valid_end = time.time()
+        print("Time in validation:", valid_end - valid_init)
+        writer.add_scalar('validation/valid_accuracy', acc, i+1)
+        # print("Validation accuracy on epoch " + str(i) + ": ")
 
     end_time = time.time()
     print("Elapsed Time:", end_time - start_time)

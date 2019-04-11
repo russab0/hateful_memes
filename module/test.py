@@ -61,7 +61,11 @@ class Tokenize(object):
     def __call__(self, sample):
 
         tokens = self.tokenizer.tokenize(sample["text"])
+
+        tokens = tokens[:50]
         input_ids = self.tokenizer.convert_tokens_to_ids(tokens)
+
+
 
         # self.dataloader.max_length = max(self.dataloader.max_length, len(input_ids))
 
@@ -121,6 +125,8 @@ def custom_collate(batch):
         txt.append(b["text"])
 
     batch2["text"] = torch.nn.utils.rnn.pad_sequence(txt, batch_first=True)
+
+
     del batch
 
     return batch2
