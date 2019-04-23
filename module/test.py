@@ -6,6 +6,7 @@ import cv2
 import pytesseract
 
 import torch
+import time
 
 class ToTensor(object):
     """Convert ndarrays in sample to Tensors."""
@@ -95,13 +96,25 @@ class ImagesDataLoader(Dataset):
 
     def __getitem__(self, index):
 
+        # t = time.time()
+
         path = self.base_path + "/" + self.data[index][0]
+        text_path = path + ".ocr"
         # print(path)
         image = cv2.imread(path)
-        text = pytesseract.image_to_string(image, config='--oem 1')
-        text = text.replace("\n", "")
+        # print("imread:", time.time() - t)
+        # t = time.time()
 
         assert image is not None
+
+        try:
+            text = open(text_path)
+            text = text.read()
+        except:
+            text = pytesseract.image_to_string(image, config='--oem 1')
+            # print("pytesseract time, ", time.time() - t)
+        text = text.replace("\n", "")
+        # print(text)
 
         hate = self.data[index][1]
 

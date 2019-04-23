@@ -38,10 +38,10 @@ class MultimodalClassifier(nn.Module):
 
 
     def forward(self, image, text):
+        with torch.no_grad():
 
-
-        image_features = self.im_feat_model(image)
-        text_features = self.text_feat_model(text)
+            image_features = self.im_feat_model(image)
+            text_features = self.text_feat_model(text)
 
         text_features = text_features[1]
 
@@ -56,36 +56,48 @@ class MultimodalClassifier(nn.Module):
 "Credit to https://gist.github.com/kyamagu/73ab34cbe12f3db807a314019062ad43"
 def accuracy(output, target):
     """Computes the accuracy for multiple binary predictions"""
+    # print(output)
     pred = output >= 0.5
+    # print(pred)
     truth = target >= 0.5
+    # print(truth)
     acc = pred.eq(truth).sum()
+    # print(acc)
     return acc
 
 def validate(dataloader_valid, device):
+    # t = time.time()
+
+    acc = 0
+    i = 0
 
     for batch in dataloader_valid:
+
+        # print("loadtime, ", time.time() - t)
 
         image_batch = batch["image"].to(device)
         text_batch = batch["text"].to(device)
         target_batch = batch["class"].to(device)
         target_batch = target_batch.unsqueeze(1)
 
-        acc = 0
-        i = 0
+
 
         with torch.no_grad():
 
             pred = full_model(image_batch, text_batch)
             acc += accuracy(pred, target_batch)
             i += target_batch.numel()
-            kk = acc.float()/i
+    kk = acc.float()/i
+    print('acc', acc)
+    print('i', i)
+    # t = time.time()
     return kk
 
 
 if __name__ == '__main__':
 
     HIDDEN_SIZE = 100
-    N_EPOCHS = 5
+    N_EPOCHS = 20
     BATCH_SIZE = 30
 
     TRAIN_METADATA_HATE = "hateMemesList.txt.train"
@@ -94,9 +106,11 @@ if __name__ == '__main__':
     VALID_METADATA_GOOD = "redditMemesList.txt.valid"
     BASE_PATH = "data/train_data"
     MODEL_SAVE = "models/classifier2.pt"
+    # MODEL_SAVE = "models/kk.pt"
 
-    # logname = "H100x4_IF1000"
-    logname = "H100x4_IF4098"
+    # logname = "H100x4_IF1000v2"
+    logname = "H100x4_IF4098v3"
+    # logname = "kk"
 
 
     start_time = time.time()
@@ -156,6 +170,7 @@ if __name__ == '__main__':
         pbar = tqdm(total=DATASET_LEN)
         for batch in dataloader_train:
 
+
             image_batch = batch["image"].to(device)
             text_batch = batch["text"].to(device)
             target_batch = batch["class"].to(device)
@@ -163,7 +178,11 @@ if __name__ == '__main__':
 
             optimizer.zero_grad()
 
+
+            # forward_init = time.time()
             pred = full_model(image_batch, text_batch)
+            # forward_final = time.time()
+            # print("forward time: ", forward_final - forward_init)
 
             loss = criterion(pred, target_batch)
 
@@ -175,6 +194,8 @@ if __name__ == '__main__':
             iteration += 1
 
             pbar.update(BATCH_SIZE)
+
+            # break
 
             # print(pred)
 
