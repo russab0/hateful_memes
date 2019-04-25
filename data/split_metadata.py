@@ -1,8 +1,8 @@
 from random import shuffle
 
-infile = "train_data/redditMemesList.txt"
-trainfile = "train_data/redditMemesList.txt.train"
-validfile = "train_data/redditMemesList.txt.valid"
+infile = "train_data/hateMemesList.txt"
+trainfile = infile + ".train"
+validfile = infile + ".valid"
 TRAIN_PERCENTATGE = 0.85
 
 infile = open(infile)

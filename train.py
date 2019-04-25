@@ -96,8 +96,8 @@ def validate(dataloader_valid, device):
 
 if __name__ == '__main__':
 
-    HIDDEN_SIZE = 100
-    N_EPOCHS = 20
+    HIDDEN_SIZE = 200
+    N_EPOCHS = 200
     BATCH_SIZE = 30
 
     TRAIN_METADATA_HATE = "hateMemesList.txt.train"
@@ -109,7 +109,7 @@ if __name__ == '__main__':
     # MODEL_SAVE = "models/kk.pt"
 
     # logname = "H100x4_IF1000v2"
-    logname = "H100x4_IF4098v3"
+    logname = "H200x4_IF4098v2jews"
     # logname = "kk"
 
 
@@ -125,7 +125,6 @@ if __name__ == '__main__':
     VGG16_features.classifier = VGG16_features.classifier[:-3]
 
     VGG16_features.to(device)
-
 
     # To embed text, we use a Pytorch implementation of BERT: Using pythorch BERT implementation from https://github.com/huggingface/pytorch-pretrained-BERT
     # Get Textual Tokenizer
