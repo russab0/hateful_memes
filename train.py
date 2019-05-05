@@ -19,11 +19,15 @@ from tqdm import tqdm
 
 
 class MultimodalClassifier(nn.Module):
-    def __init__(self, image_feat_model, text_feat_model, TOTAL_FEATURES, hidden_size):
+    def __init__(self, image_feat_model, text_feat_model, TOTAL_FEATURES,
+                 USE_IMAGE, USE_TEXT, hidden_size):
 
         super(MultimodalClassifier, self).__init__()
         self.im_feat_model = image_feat_model
         self.text_feat_model = text_feat_model
+
+        self.USE_IMAGE = USE_IMAGE
+        self.USE_TEXT = USE_TEXT
 
         self.classifier = nn.Sequential(
             nn.Linear(TOTAL_FEATURES, hidden_size),
@@ -39,17 +43,20 @@ class MultimodalClassifier(nn.Module):
 
     def forward(self, image, text):
         with torch.no_grad():
+            if self.USE_IMAGE == 1:
+                image_features = self.im_feat_model(image)
+                features = image_features
 
-            image_features = self.im_feat_model(image)
-            text_features = self.text_feat_model(text)
+            if self.USE_TEXT == 1:
+                text_features = self.text_feat_model(text)
+                text_features = text_features[1]
+                features = text_features
 
-        text_features = text_features[1]
-
+        if self.USE_TEXT == 1 and self.USE_IMAGE == 1:
+            features = torch.cat((image_features, text_features), dim=1)
         # cat_size = image_features.size()[1] + text_features.size()[1]
 
-        fusion = torch.cat((image_features, text_features), dim=1)
-
-        out = self.classifier(fusion)
+        out = self.classifier(features)
 
         return out
 
@@ -65,11 +72,13 @@ def accuracy(output, target):
     # print(acc)
     return acc
 
-def validate(dataloader_valid, device):
+def validate(dataloader_valid, criterion, device):
     # t = time.time()
 
+    loss = 0
     acc = 0
     i = 0
+
 
     for batch in dataloader_valid:
 
@@ -86,19 +95,28 @@ def validate(dataloader_valid, device):
 
             pred = full_model(image_batch, text_batch)
             acc += accuracy(pred, target_batch)
+            size = target_batch.numel()
+            loss += criterion(pred, target_batch) * size
+
             i += target_batch.numel()
-    kk = acc.float()/i
+
+
+    valid_acc = acc.float()/i
+    valid_mse = loss/i
     print('acc', acc)
     print('i', i)
     # t = time.time()
-    return kk
+    return valid_acc, valid_mse
 
 
 if __name__ == '__main__':
 
-    HIDDEN_SIZE = 200
+    HIDDEN_SIZE = 100
     N_EPOCHS = 200
     BATCH_SIZE = 30
+
+    USE_IMAGE = 1
+    USE_TEXT = 0
 
     TRAIN_METADATA_HATE = "hateMemesList.txt.train"
     TRAIN_METADATA_GOOD = "redditMemesList.txt.train"
@@ -109,7 +127,7 @@ if __name__ == '__main__':
     # MODEL_SAVE = "models/kk.pt"
 
     # logname = "H100x4_IF1000v2"
-    logname = "H200x4_IF4098v2jews"
+    logname = "H100x4_image"
     # logname = "kk"
 
 
@@ -138,10 +156,14 @@ if __name__ == '__main__':
     # BERT text embedder --> 768 features
 
     # IMAGE_AND_TEXT_FEATURES = 1768
-    IMAGE_AND_TEXT_FEATURES = 4864
+    IMAGE_FEATURES = 4096
+    TEXT_FEATURES = 768
+
+    IMAGE_AND_TEXT_FEATURES = IMAGE_FEATURES * USE_IMAGE + TEXT_FEATURES * USE_TEXT
 
     full_model = MultimodalClassifier(VGG16_features, bert_model,
-                                      IMAGE_AND_TEXT_FEATURES, HIDDEN_SIZE)
+                                      IMAGE_AND_TEXT_FEATURES, USE_IMAGE,
+                                      USE_TEXT, HIDDEN_SIZE)
     full_model.to(device)
 
     transform = transforms.Compose([test.Rescale((224, 224)),
@@ -207,10 +229,11 @@ if __name__ == '__main__':
         print("Starting Validation")
 
         valid_init = time.time()
-        acc = validate(dataloader_valid, device)
+        valid_acc, valid_loss  = validate(dataloader_valid, criterion, device)
         valid_end = time.time()
         print("Time in validation:", valid_end - valid_init)
-        writer.add_scalar('validation/valid_accuracy', acc, i+1)
+        writer.add_scalar('validation/valid_accuracy', valid_acc, i+1)
+        writer.add_scalar('validation/valid_mse', valid_loss, i+1)
         # print("Validation accuracy on epoch " + str(i) + ": ")
 
     end_time = time.time()
