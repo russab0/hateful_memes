@@ -32,8 +32,10 @@ class MultimodalClassifier(nn.Module):
         self.classifier = nn.Sequential(
             nn.Linear(TOTAL_FEATURES, hidden_size),
             nn.ReLU(),
+            # nn.Dropout(0.5),
             nn.Linear(hidden_size, hidden_size),
             nn.ReLU(),
+            # nn.Dropout(0.5),
             nn.Linear(hidden_size, 1),
             # nn.Softmax()
         )
@@ -116,7 +118,7 @@ if __name__ == '__main__':
     BATCH_SIZE = 30
 
     USE_IMAGE = 1
-    USE_TEXT = 0
+    USE_TEXT = 1
 
     TRAIN_METADATA_HATE = "hateMemesList.txt.train"
     TRAIN_METADATA_GOOD = "redditMemesList.txt.train"
@@ -127,7 +129,7 @@ if __name__ == '__main__':
     # MODEL_SAVE = "models/kk.pt"
 
     # logname = "H100x4_IF1000v2"
-    logname = "H100x4_image"
+    logname = "H100x4_noDropout_SGD_cropping"
     # logname = "kk"
 
 
@@ -166,7 +168,8 @@ if __name__ == '__main__':
                                       USE_TEXT, HIDDEN_SIZE)
     full_model.to(device)
 
-    transform = transforms.Compose([test.Rescale((224, 224)),
+    transform = transforms.Compose([test.Rescale((256, 256)),
+                                    test.RandomCrop(224),
                                     test.Tokenize(tokenizer),
                                     test.ToTensor()])
 
@@ -182,6 +185,8 @@ if __name__ == '__main__':
     # criterion = nn.CrossEntropyLoss()
     criterion = nn.MSELoss()
     optimizer = torch.optim.SGD(full_model.classifier.parameters(), lr=0.01, momentum=0.9)
+    # optimizer = torch.optim.Adam(full_model.classifier.parameters(), lr=0.0001)
+
 
     iteration = 0
 
