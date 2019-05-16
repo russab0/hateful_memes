@@ -13,7 +13,7 @@ class ToTensor(object):
 
     def __call__(self, sample):
 
-        image, text, hate = sample['image'], sample["text"], sample['class']
+        image, bert_tokens, hate = sample['image'], sample["bert_tokens"], sample['class']
 
         # swap color axis because
         # numpy image: H x W x C
@@ -24,11 +24,14 @@ class ToTensor(object):
         image = image.float()
         image /= 255
 
-        text = torch.tensor(text, dtype=torch.long)
+        bert_tokens = torch.tensor(bert_tokens, dtype=torch.long)
+        hate = torch.tensor(hate)
 
-        return {'image': image,
-                'class': torch.tensor(hate),
-                'text': text}
+        sample["image"] = image
+        sample["bert_tokens"] = bert_tokens
+        sample["class"] = hate
+
+        return sample
 
 class RandomCrop(object):
     """Crop randomly the image in a sample.
@@ -47,7 +50,7 @@ class RandomCrop(object):
             self.output_size = output_size
 
     def __call__(self, sample):
-        image, text, label= sample['image'], sample['text'], sample['class']
+        image = sample['image']
 
         h, w = image.shape[:2]
         new_h, new_w = self.output_size
@@ -59,8 +62,9 @@ class RandomCrop(object):
                       left: left + new_w]
 
         # landmarks = landmarks - [left, top]
+        sample["image"] = image
 
-        return {'image': image, 'text': text, 'class': label}
+        return sample
 
 
 class Rescale(object):
@@ -82,7 +86,6 @@ class Rescale(object):
         image = cv2.resize(image, self.output_size, interpolation=cv2.INTER_CUBIC)
         sample["image"] = image
 
-
         return sample
 
 class Tokenize(object):
@@ -102,12 +105,46 @@ class Tokenize(object):
 
         # self.dataloader.max_length = max(self.dataloader.max_length, len(input_ids))
 
-        sample["text"] = input_ids
+        sample["bert_tokens"] = input_ids
 
         return sample
 
+class HateWordsVector(object):
+
+    def __init__(self, list):
+        self.hateWords = list
+
+
+    def __call__(self, sample):
+
+        text = sample["text"]
+
+        N = len(self.hateWords)
+
+        vector = torch.zeros(N)
+
+        for i in range(N):
+            if self.hateWords[i] in text:
+                vector[i] = 1
+
+        sample["hate_words"] = vector
+
+        return sample
+
+
+
+
 class ImagesDataLoader(Dataset):
     def __init__(self, love_metadata, hate_metadata, base_path, transform=None):
+
+
+        ## Keys:
+        # image
+        # text
+        # bert_tokens
+        # hate_words
+
+        # class
 
         self.transform = transform
         self.base_path = base_path
@@ -145,7 +182,8 @@ class ImagesDataLoader(Dataset):
         except:
             text = pytesseract.image_to_string(image, config='--oem 1')
             # print("pytesseract time, ", time.time() - t)
-        text = text.replace("\n", "")
+            print("WARNING: PREVIOUS OCR EXTRACTION NOT FOUND. THIS SLOWS DOWN THE DATA LOADING by 2000%")
+        text = text.replace("\n", " ")
         # print(text)
 
         hate = self.data[index][1]
@@ -160,39 +198,23 @@ class ImagesDataLoader(Dataset):
 def custom_collate(batch):
 
     batch2 = {"image": batch[0]["image"].unsqueeze(0),
-              "class": batch[0]["class"].unsqueeze(0)}
+              "class": batch[0]["class"].unsqueeze(0),
+              "hate_words": batch[0]["hate_words"].unsqueeze(0)}
 
-    txt = [batch[0]["text"]]
+    tokens = [batch[0]["bert_tokens"]]
 
     for b in batch[1:]:
         batch2["image"] = torch.cat((batch2["image"], b["image"].unsqueeze(0)))
         batch2["class"] = torch.cat((batch2["class"], b["class"].unsqueeze(0)))
-        txt.append(b["text"])
+        batch2["hate_words"] = torch.cat((batch2["hate_words"], b["hate_words"].unsqueeze(0)))
+        tokens.append(b["bert_tokens"])
 
-    batch2["text"] = torch.nn.utils.rnn.pad_sequence(txt, batch_first=True)
+    batch2["bert_tokens"] = torch.nn.utils.rnn.pad_sequence(tokens, batch_first=True)
 
 
     del batch
 
     return batch2
-
-
-
-# if __name__ == '__main__':
-#
-#     transform = transforms.Compose([Rescale((224, 224)),
-#                                     ToTensor()])
-#
-#     images_dataset = ImagesDataLoader("imagesList.txt", "imagesList.txt", "data/hate_memes_GI", transform)
-#
-#     dataloader = DataLoader(images_dataset, batch_size=10, shuffle=True)
-#
-#     for batch in dataloader:
-#
-#         print(type(batch))
-#
-#         input_batch = batch["image"]
-#         target_batch = batch["class"]
 
 
 
