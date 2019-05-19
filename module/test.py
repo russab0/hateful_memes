@@ -7,6 +7,7 @@ import pytesseract
 import numpy as np
 import torch
 import time
+import random
 
 class ToTensor(object):
     """Convert ndarrays in sample to Tensors."""
@@ -157,8 +158,6 @@ class ImagesDataLoader(Dataset):
 
         self.data = love_paths + hate_paths
 
-        self.max_length = -1
-
     def __len__(self):
 
         return len(self.data)
@@ -187,6 +186,89 @@ class ImagesDataLoader(Dataset):
         # print(text)
 
         hate = self.data[index][1]
+
+        sample = {'image': image, "text": text, "class": hate}
+
+        if self.transform:
+            sample = self.transform(sample)
+
+        return sample
+
+
+class ImageTextMatcherDataLoader(Dataset):
+    def __init__(self, love_metadata, hate_metadata, base_path, transform=None, max_amount = 1000):
+
+
+        ## Keys:
+        # image
+        # text
+        # bert_tokens
+        # hate_words
+
+        # class
+
+        self.transform = transform
+        self.base_path = base_path
+
+        love_paths = list(open(base_path + "/" + love_metadata))
+        hate_paths = list(open(base_path + "/" + hate_metadata))
+
+        total = []
+
+        for x in hate_paths:
+            # print(x)
+            x = x.strip("\n")
+
+            y = random.choice(love_paths)
+            # print(y)
+            y = y.strip("\n")
+
+            total.append([x, x+'.ocr', 0.0])
+            total.append([x, y+'.ocr', 1.0])
+
+        for x in love_paths:
+            x = x.strip("\n")
+
+            y = random.choice(hate_paths)
+            y = y.strip("\n")
+
+            total.append([x, x + '.ocr', 0.0])
+            total.append([x, y + '.ocr', 1.0])
+
+        self.data = total
+
+
+
+
+    def __len__(self):
+
+        return len(self.data)
+
+    def __getitem__(self, index):
+
+        # t = time.time()
+
+        path = self.base_path + "/" + self.data[index][0]
+        text_path = self.base_path + "/" + self.data[index][1]
+        # print(path)
+        image = cv2.imread(path)
+        # print("imread:", time.time() - t)
+        # t = time.time()
+
+        assert image is not None
+
+        try:
+            text = open(text_path)
+            text = text.read()
+        except:
+            text = pytesseract.image_to_string(image, config='--oem 1')
+            # print("pytesseract time, ", time.time() - t)
+            print("WARNING: PREVIOUS OCR EXTRACTION NOT FOUND. THIS SLOWS DOWN THE DATA LOADING by 2000%")
+            print(text_path)
+        text = text.replace("\n", " ")
+        # print(text)
+
+        hate = self.data[index][2]
 
         sample = {'image': image, "text": text, "class": hate}
 

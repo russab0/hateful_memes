@@ -94,6 +94,8 @@ def validate(dataloader_valid, criterion, device):
 
         image_batch = batch["image"].to(device)
         text_batch = batch["bert_tokens"].to(device)
+        hate_words_batch = batch["hate_words"].to(device)
+
         target_batch = batch["class"].to(device)
         target_batch = target_batch.unsqueeze(1)
 
@@ -101,7 +103,7 @@ def validate(dataloader_valid, criterion, device):
 
         with torch.no_grad():
 
-            pred = full_model(image_batch, text_batch)
+            pred = full_model(image_batch, text_batch, hate_words_batch)
             acc += accuracy(pred, target_batch)
             size = target_batch.numel()
             loss += criterion(pred, target_batch) * size
@@ -132,12 +134,12 @@ if __name__ == '__main__':
     VALID_METADATA_HATE = "hateMemesList.txt.valid"
     VALID_METADATA_GOOD = "redditMemesList.txt.valid"
     BASE_PATH = "data/train_data"
-    MODEL_SAVE = "models/classifier2.pt"
+    MODEL_SAVE = "models/matching.pt"
     # MODEL_SAVE = "models/kk.pt"
 
     # logname = "H100x4_IF1000v2"
-    # logname = "H100x4_Dropout2"
-    logname = "H100x4_hatewords"
+    logname = "H100x4_matching"
+    # logname = "H50x4"
     # logname = "kk"
 
     checkpoint = None
@@ -214,8 +216,10 @@ if __name__ == '__main__':
                                     test.Tokenize(tokenizer),
                                     test.ToTensor()])
 
-    train_dataset = test.ImagesDataLoader(TRAIN_METADATA_GOOD, TRAIN_METADATA_HATE, BASE_PATH, transform)
-    valid_dataset = test.ImagesDataLoader(VALID_METADATA_GOOD, VALID_METADATA_HATE, BASE_PATH, transformValid)
+    # train_dataset = test.ImagesDataLoader(TRAIN_METADATA_GOOD, TRAIN_METADATA_HATE, BASE_PATH, transform)
+    # valid_dataset = test.ImagesDataLoader(TRAIN_METADATA_GOOD, TRAIN_METADATA_HATE, BASE_PATH, transform)
+    train_dataset = test.ImageTextMatcherDataLoader(TRAIN_METADATA_GOOD, TRAIN_METADATA_HATE, BASE_PATH, transform)
+    valid_dataset = test.ImageTextMatcherDataLoader(VALID_METADATA_GOOD, VALID_METADATA_HATE, BASE_PATH, transformValid)
 
     DATASET_LEN = train_dataset.__len__()
 
@@ -230,6 +234,8 @@ if __name__ == '__main__':
 
 
     iteration = 0
+
+    best_acc = -1
 
     for i in range(N_EPOCHS):
 
@@ -281,7 +287,11 @@ if __name__ == '__main__':
 
         full_model.eval()
         valid_acc, valid_loss = validate(dataloader_valid, criterion, device)
+
         full_model.train()
+
+        if valid_acc > best_acc:
+            torch.save(full_model.state_dict(), MODEL_SAVE + '.best')
 
         valid_end = time.time()
         print("Time in validation:", valid_end - valid_init)
