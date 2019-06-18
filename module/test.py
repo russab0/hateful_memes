@@ -96,16 +96,19 @@ class Tokenize(object):
         self.tokenizer = tokenizer
 
     def __call__(self, sample):
-
+        # print("\nnew text")
+        # print(sample["text"])
         tokens = self.tokenizer.tokenize(sample["text"])
+        # print(tokens)
 
-        tokens = tokens[:50]
+        tokens = tokens[:48]
+        tokens = ["[CLS]"] + tokens + ["[SEP]"]
+        # print(tokens)
         input_ids = self.tokenizer.convert_tokens_to_ids(tokens)
 
-
-
+        # print(input_ids)
         # self.dataloader.max_length = max(self.dataloader.max_length, len(input_ids))
-
+        # print(input_ids)
         sample["bert_tokens"] = input_ids
 
         return sample
@@ -114,19 +117,34 @@ class HateWordsVector(object):
 
     def __init__(self, list):
         self.hateWords = list
-
+        self.total_hate_hate = 0
+        self.total_hate_love = 0
+        self.total_sentences_hate = 0
+        self.empty_text = 0
 
     def __call__(self, sample):
 
         text = sample["text"]
+        if text.strip() == '':
+            self.empty_text += 1
 
         N = len(self.hateWords)
 
         vector = torch.zeros(N)
 
+        hate_found = False
+
+
         for i in range(N):
             if self.hateWords[i] in text:
                 vector[i] = 1
+                self.total_hate_hate += sample["class"]
+                self.total_hate_hate += 1 - sample["class"]
+
+                hate_found = True
+
+        if hate_found:
+            self.total_sentences_hate += 1
 
         sample["hate_words"] = vector
 
@@ -165,8 +183,9 @@ class ImagesDataLoader(Dataset):
     def __getitem__(self, index):
 
         # t = time.time()
+        image_path = self.data[index][0]
 
-        path = self.base_path + "/" + self.data[index][0]
+        path = self.base_path + "/" + image_path
         text_path = path + ".ocr"
         # print(path)
         image = cv2.imread(path)
@@ -187,7 +206,7 @@ class ImagesDataLoader(Dataset):
 
         hate = self.data[index][1]
 
-        sample = {'image': image, "text": text, "class": hate}
+        sample = {'image': image, "image_path": image_path, "text": text, "class": hate, "image_path": path}
 
         if self.transform:
             sample = self.transform(sample)
@@ -277,11 +296,87 @@ class ImageTextMatcherDataLoader(Dataset):
 
         return sample
 
+
+class UnsupervisedMatcherDataLoader(Dataset):
+    def __init__(self, metadata, base_path, transform=None, max_amount = 1000):
+
+
+        ## Keys:
+        # image
+        # text
+        # bert_tokens
+        # hate_words
+
+        # class
+
+        self.transform = transform
+        self.base_path = base_path
+
+        paths = list(open(base_path + "/" + metadata))
+
+        total = []
+
+        for x in paths:
+            x = x.strip("\n")
+            total.append([x, x + '.ocr', 0.0])
+
+
+            for i in range(1):
+                y = random.choice(paths)
+                y = y.strip("\n")
+                total.append([x, y + '.ocr', 1.0])
+
+        self.data = total
+
+
+    def __len__(self):
+
+        return len(self.data)
+
+    def __getitem__(self, index):
+
+        # t = time.time()
+
+        path = self.base_path + "/" + self.data[index][0]
+        text_path = self.base_path + "/" + self.data[index][1]
+        # print(path)
+        image = cv2.imread(path)
+        # print("imread:", time.time() - t)
+        # t = time.time()
+
+        assert image is not None
+
+        try:
+            text = open(text_path)
+            text = text.read()
+        except:
+            text = pytesseract.image_to_string(image, config='--oem 1')
+            # print("pytesseract time, ", time.time() - t)
+            print("WARNING: PREVIOUS OCR EXTRACTION NOT FOUND. THIS SLOWS DOWN THE DATA LOADING by 2000%")
+            print(text_path)
+        text = text.replace("\n", " ")
+        # print(text)
+
+        hate = self.data[index][2]
+
+        sample = {'image': image, "text": text, "class": hate, "image_path": path}
+
+        if self.transform:
+            sample = self.transform(sample)
+
+        return sample
+
 def custom_collate(batch):
+
 
     batch2 = {"image": batch[0]["image"].unsqueeze(0),
               "class": batch[0]["class"].unsqueeze(0),
-              "hate_words": batch[0]["hate_words"].unsqueeze(0)}
+              "hate_words": batch[0]["hate_words"].unsqueeze(0),
+              }
+
+    image_paths = [x["image_path"] for x in batch]
+
+    batch2["image_paths"] = image_paths
 
     tokens = [batch[0]["bert_tokens"]]
 
@@ -291,8 +386,15 @@ def custom_collate(batch):
         batch2["hate_words"] = torch.cat((batch2["hate_words"], b["hate_words"].unsqueeze(0)))
         tokens.append(b["bert_tokens"])
 
-    batch2["bert_tokens"] = torch.nn.utils.rnn.pad_sequence(tokens, batch_first=True)
+    try:
+        batch2["bert_tokens"] = torch.nn.utils.rnn.pad_sequence(tokens, batch_first=True)
 
+    except Exception as e:
+        print(e)
+        print(tokens)
+        quit()
+
+    # print(batch2["bert_tokens"])
 
     del batch
 
