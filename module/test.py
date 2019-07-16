@@ -188,8 +188,9 @@ class ImagesDataLoader(Dataset):
         path = self.base_path + "/" + image_path
         text_path = path + ".ocr"
         # print(path)
+        t = time.time()
         image = cv2.imread(path)
-        # print("imread:", time.time() - t)
+        print("imread:", time.time() - t)
         # t = time.time()
 
         assert image is not None

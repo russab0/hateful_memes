@@ -47,31 +47,31 @@ class MultimodalClassifier(nn.Module):
 
 
     def forward(self, image, text, hate_words):
-        with torch.no_grad():
+        # with torch.no_grad():
 
-            if self.USE_IMAGE == 1:
-                batch_size = image.size()[0]
-            elif self.USE_TEXT == 1:
-                batch_size = image.size()[0]
-            elif self.USE_HATE_WORDS == 1:
-                batch_size = image.size()[0]
+        if self.USE_IMAGE == 1:
+            batch_size = image.size()[0]
+        elif self.USE_TEXT == 1:
+            batch_size = image.size()[0]
+        elif self.USE_HATE_WORDS == 1:
+            batch_size = image.size()[0]
 
-            features = torch.zeros(batch_size, 1).to(device)
+        features = torch.zeros(batch_size, 1).to(device)
 
-            if self.USE_IMAGE == 1:
-                image_features = self.im_feat_model(image)
-                features = torch.cat((features, image_features), dim=1)
+        if self.USE_IMAGE == 1:
+            image_features = self.im_feat_model(image)
+            features = torch.cat((features, image_features), dim=1)
 
-            if self.USE_TEXT == 1:
-                text_features = self.text_feat_model(text)
-                text_features = text_features[1]
-                # print(text_features)
-                features = torch.cat((features, text_features), dim=1)
+        if self.USE_TEXT == 1:
+            text_features = self.text_feat_model(text)
+            text_features = text_features[1]
+            # print(text_features)
+            features = torch.cat((features, text_features), dim=1)
 
-            if self.USE_HATE_WORDS == 1:
-                features = torch.cat((features, hate_words), dim=1)
+        if self.USE_HATE_WORDS == 1:
+            features = torch.cat((features, hate_words), dim=1)
 
-            features = features[:, 1:]
+        features = features[:, 1:]
 
         out = self.classifier(features)
 
@@ -172,11 +172,13 @@ def validate(dataloader_valid, criterion, device):
 if __name__ == '__main__':
 
     HIDDEN_SIZE = 50
-    N_EPOCHS = 100
+    N_EPOCHS = 300
     BATCH_SIZE = 30
 
+    UNFREEZE_FEATURES = 10
+
     USE_IMAGE = 1
-    USE_TEXT = 1
+    USE_TEXT = 0
     USE_HATE_WORDS = 0
 
     TRAIN_METADATA_HATE = "hateMemesList.txt.train"
@@ -192,7 +194,7 @@ if __name__ == '__main__':
     # logname = "H100x4_matching_pretrained"
     # logname = "logs_H50/H50x4_Dropoutv2"
     # logname = "logs_H50/unfreeze_bert_textonly"
-    logname = "logs_H50/nohatewords_unfreeze_all_adam"
+    logname = "kk2"
 
     # checkpoint = "models/unsupervised_pretrain.pt"
     checkpoint = None
@@ -233,7 +235,7 @@ if __name__ == '__main__':
     # Get Textual Tokenizer
     tokenizer = BertTokenizer.from_pretrained("bert-base-multilingual-cased", do_lower_case="true")
     # Get Textual Embedding.
-    bert_model = BertModel.from_pretrained("bert-base-multilingual-cased")
+    bert_model = BertModel.from_pretrai ned("bert-base-multilingual-cased")
     bert_model.eval()
     bert_model.to(device)
 
@@ -262,7 +264,7 @@ if __name__ == '__main__':
 
     # transform = transforms.Compose([test.Rescale((256, 256)),
     transform = transforms.Compose([test.Rescale((224, 224)),
-                                    test.RandomCrop(224),
+                                    # test.RandomCrop(224),
                                     test.HateWordsVector(hate_list),
                                     test.Tokenize(tokenizer),
                                     test.ToTensor()])
@@ -287,11 +289,13 @@ if __name__ == '__main__':
     # criterion = nn.CrossEntropyLoss()
     criterion = nn.MSELoss()
 
-    # parameters = list(full_model.classifier.parameters()) + list(full_model.text_feat_model.parameters())
-
+    # feature_parameters = list(full_model.im_feat_model.classifier.parameters()) + list(bert_model.parameters())
+    #
     # optimizer = torch.optim.SGD(parameters, lr=0.01, momentum=0.9)
     # optimizer = torch.optim.SGD(full_model.parameters(), lr=0.01, momentum=0.9)
-    optimizer = torch.optim.Adam(full_model.parameters())
+    optimizer = torch.optim.Adam(full_model.classifier.parameters())
+    # features_optimizer = torch.optim.Adam(feature_parameters)
+    features_optimizer = torch.optim.Adam(VGG16_features.classifier.parameters(), lr=0.00005)
 
 
     iteration = 0
@@ -313,7 +317,7 @@ if __name__ == '__main__':
             target_batch = target_batch.unsqueeze(1)
 
             optimizer.zero_grad()
-
+            features_optimizer.zero_grad()
 
             # forward_init = time.time()
             pred = full_model(image_batch, text_batch, hate_words_batch)
@@ -324,7 +328,11 @@ if __name__ == '__main__':
 
             loss.backward()
 
+
             optimizer.step()
+
+            if i >= UNFREEZE_FEATURES:
+                features_optimizer.step()
 
             writer.add_scalar('train/mse', loss, iteration*BATCH_SIZE)
             iteration += 1
@@ -391,6 +399,8 @@ if __name__ == '__main__':
         writer.add_scalar('validation/valid_mse', valid_loss, i+1)
         # print("Validation accuracy on epoch " + str(i) + ": ")
         # break
+
+
     end_time = time.time()
     print("Elapsed Time:", end_time - start_time)
 
