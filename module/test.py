@@ -190,7 +190,7 @@ class ImagesDataLoader(Dataset):
         # print(path)
         t = time.time()
         image = cv2.imread(path)
-        print("imread:", time.time() - t)
+        # print("imread:", time.time() - t)
         # t = time.time()
 
         assert image is not None

@@ -8,8 +8,7 @@ import torch.nn.functional as F
 
 from module import test
 
-from pytorch_pretrained_bert.tokenization import BertTokenizer
-from pytorch_pretrained_bert.modeling import BertModel
+from pytorch_transformers import *
 
 import time
 
@@ -64,7 +63,9 @@ class MultimodalClassifier(nn.Module):
 
         if self.USE_TEXT == 1:
             text_features = self.text_feat_model(text)
-            text_features = text_features[1]
+            last_hidden_states = self.text_feat_model(text)[0]
+            text_features = torch.sum(last_hidden_states, dim=1)
+            text_features = text_features / last_hidden_states.size()[1]
             # print(text_features)
             features = torch.cat((features, text_features), dim=1)
 
@@ -177,8 +178,8 @@ if __name__ == '__main__':
 
     UNFREEZE_FEATURES = 10
 
-    USE_IMAGE = 1
-    USE_TEXT = 0
+    USE_IMAGE = 0
+    USE_TEXT = 1
     USE_HATE_WORDS = 0
 
     TRAIN_METADATA_HATE = "hateMemesList.txt.train"
@@ -194,7 +195,7 @@ if __name__ == '__main__':
     # logname = "H100x4_matching_pretrained"
     # logname = "logs_H50/H50x4_Dropoutv2"
     # logname = "logs_H50/unfreeze_bert_textonly"
-    logname = "kk2"
+    logname = "logs_post/bert_fixedbug_averger"
 
     # checkpoint = "models/unsupervised_pretrain.pt"
     checkpoint = None
@@ -233,9 +234,9 @@ if __name__ == '__main__':
 
     # To embed text, we use a Pytorch implementation of BERT: Using pythorch BERT implementation from https://github.com/huggingface/pytorch-pretrained-BERT
     # Get Textual Tokenizer
-    tokenizer = BertTokenizer.from_pretrained("bert-base-multilingual-cased", do_lower_case="true")
+    tokenizer = BertTokenizer.from_pretrained("bert-base-multilingual-cased")
     # Get Textual Embedding.
-    bert_model = BertModel.from_pretrai ned("bert-base-multilingual-cased")
+    bert_model = BertModel.from_pretrained("bert-base-multilingual-cased")
     bert_model.eval()
     bert_model.to(device)
 
