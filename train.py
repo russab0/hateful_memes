@@ -173,12 +173,12 @@ def validate(dataloader_valid, criterion, device):
 if __name__ == '__main__':
 
     HIDDEN_SIZE = 50
-    N_EPOCHS = 300
+    N_EPOCHS = 100
     BATCH_SIZE = 30
 
     UNFREEZE_FEATURES = 10
 
-    USE_IMAGE = 0
+    USE_IMAGE = 1
     USE_TEXT = 1
     USE_HATE_WORDS = 0
 
@@ -195,7 +195,7 @@ if __name__ == '__main__':
     # logname = "H100x4_matching_pretrained"
     # logname = "logs_H50/H50x4_Dropoutv2"
     # logname = "logs_H50/unfreeze_bert_textonly"
-    logname = "logs_post/bert_fixedbug_averger"
+    logname = "logs_post/bertimage"
 
     # checkpoint = "models/unsupervised_pretrain.pt"
     checkpoint = None

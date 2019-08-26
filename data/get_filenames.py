@@ -1,7 +1,7 @@
 from glob import glob
 import cv2
 
-files = glob("*/*")
+files = glob("untagged_memes1/*") + glob("untagged_memes2/*")
 
 out = open("kkfiles", "w")
 

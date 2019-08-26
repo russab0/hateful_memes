@@ -38,28 +38,36 @@ if __name__ == '__main__':
     mse_train_smooth = np.array(mse_train_smooth)
     mse_valid_smooth = np.array(mse_valid_smooth)
 
-    train_steps = np.arange(0, n_mses, 1)
-    valid_steps = np.arange(0, n_mses, batches_per_epoch)
+    train_steps = np.arange(0, n_valid, step=n_valid/n_mses)
+    valid_steps = np.arange(0, n_valid, 1)
+    valid_steps += 1
 
-    fig, ax1 = plt.subplots()
+    # fig, ax1 = plt.subplots()
 
-    color = 'tab:red'
-    ax1.set_xlabel('iteration (n Batches)')
-    ax1.set_ylabel('Train', color=color)
-    ax1.plot(train_steps, mse_train_smooth, color=color)
-    ax1.tick_params(axis='MSE', labelcolor=color)
+    # color = 'tab:blue'
+    # ax1.set_xlabel('Number of epoch')
+    # ax1.set_ylabel('Train', color=color)
+    # ax1.plot(train_steps, mse_train_smooth, color=color)
+    # ax1.tick_params(axis='MSE', labelcolor=color)
+    #
+    # ax2 = ax1.twinx()  # instantiate a second axes that shares the same x-axis
+    #
+    # color = 'tab:orange'
+    # ax2.set_ylabel('Validation',
+    #                color=color)  # we already handled the x-label with ax1
+    # ax2.plot(valid_steps, mse_valid_smooth, color=color)
+    # ax2.tick_params(axis='MSE', labelcolor=color)
+    #
+    # fig.tight_layout()  # otherwise the right y-label is slightly clipped
+    #
+    #
+    # plt.show()
 
-    ax2 = ax1.twinx()  # instantiate a second axes that shares the same x-axis
 
-    color = 'tab:blue'
-    ax2.set_ylabel('Validation',
-                   color=color)  # we already handled the x-label with ax1
-    ax2.plot(valid_steps, mse_valid_smooth, color=color)
-    ax2.tick_params(axis='MSE', labelcolor=color)
-
-    fig.tight_layout()  # otherwise the right y-label is slightly clipped
-
-
+    plt.plot(train_steps, mse_train_smooth)
+    plt.plot(valid_steps, mse_valid_smooth)
+    plt.ylabel("MSE")
+    plt.xlabel("Number of epoch")
     plt.show()
 
 
