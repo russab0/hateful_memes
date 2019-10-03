@@ -4,3 +4,4 @@ echo "For installation instructions visit https://github.com/hardikvasa/google-i
 
 googleimagesdownload -k "racist meme" -l 1000
 googleimagesdownload -k "muslim meme" -l 1000
+googleimagesdownload -k "jew meme" -l 1000
