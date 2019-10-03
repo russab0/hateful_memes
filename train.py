@@ -15,6 +15,7 @@ import time
 from tensorboardX import SummaryWriter
 
 from tqdm import tqdm
+import numpy as np
 
 
 class MultimodalClassifier(nn.Module):
@@ -46,8 +47,8 @@ class MultimodalClassifier(nn.Module):
 
 
     def forward(self, image, text, hate_words):
-        # with torch.no_grad():
 
+        # with torch.no_grad():
         if self.USE_IMAGE == 1:
             batch_size = image.size()[0]
         elif self.USE_TEXT == 1:
@@ -62,8 +63,9 @@ class MultimodalClassifier(nn.Module):
             features = torch.cat((features, image_features), dim=1)
 
         if self.USE_TEXT == 1:
-            text_features = self.text_feat_model(text)
+            #text_features = self.text_feat_model(text)
             last_hidden_states = self.text_feat_model(text)[0]
+            # averaging the bert outputs for each word
             text_features = torch.sum(last_hidden_states, dim=1)
             text_features = text_features / last_hidden_states.size()[1]
             # print(text_features)
@@ -142,6 +144,7 @@ def validate(dataloader_valid, criterion, device):
             distances = (pred - target_batch) ** 2
 
             kk = validAccuracy(pred, target_batch)
+            acc += kk.sum()
 
             for j, x in enumerate(distances):
                 top_losses.append([paths_batch[j], x])
@@ -152,9 +155,6 @@ def validate(dataloader_valid, criterion, device):
 
             top_losses = top_losses[:TOP_SIZE]
             fewer_losses = fewer_losses[:TOP_SIZE]
-
-            acc += kk.sum()
-
 
             size = target_batch.numel()
             loss += criterion(pred, target_batch) * size
@@ -174,11 +174,11 @@ if __name__ == '__main__':
 
     HIDDEN_SIZE = 50
     N_EPOCHS = 100
-    BATCH_SIZE = 30
+    BATCH_SIZE = 25
 
-    UNFREEZE_FEATURES = 10
+    UNFREEZE_FEATURES = 999
 
-    USE_IMAGE = 1
+    USE_IMAGE = 0
     USE_TEXT = 1
     USE_HATE_WORDS = 0
 
@@ -195,7 +195,7 @@ if __name__ == '__main__':
     # logname = "H100x4_matching_pretrained"
     # logname = "logs_H50/H50x4_Dropoutv2"
     # logname = "logs_H50/unfreeze_bert_textonly"
-    logname = "logs_post/bertimage"
+    logname = "logs_final_BS25/text2"
 
     # checkpoint = "models/unsupervised_pretrain.pt"
     checkpoint = None
@@ -206,7 +206,7 @@ if __name__ == '__main__':
 
     # Configuring CUDA / CPU execution
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-    # print('device', device)
+    print('device: ', device)
 
 
     hate_list = [
@@ -239,10 +239,6 @@ if __name__ == '__main__':
     bert_model = BertModel.from_pretrained("bert-base-multilingual-cased")
     bert_model.eval()
     bert_model.to(device)
-
-    # VGG16 output --> 1000 features
-    # VGG16 -1 layer --> 4096 features
-    # BERT text embedder --> 768 features
 
     # IMAGE_AND_TEXT_FEATURES = 1768
     IMAGE_FEATURES = 4096
@@ -296,19 +292,26 @@ if __name__ == '__main__':
     # optimizer = torch.optim.SGD(full_model.parameters(), lr=0.01, momentum=0.9)
     optimizer = torch.optim.Adam(full_model.classifier.parameters())
     # features_optimizer = torch.optim.Adam(feature_parameters)
-    features_optimizer = torch.optim.Adam(VGG16_features.classifier.parameters(), lr=0.00005)
+    features_optimizer = torch.optim.Adam(VGG16_features.classifier.parameters())
 
 
     iteration = 0
 
-    best_acc = -1
+    best_acc = np.array(-1.00)
+    full_model.text_feat_model.train()
+    full_model.im_feat_model.train()
+
+    # for name, param in full_model.im_feat_model.named_parameters():
+    #     #if param.requires_grad:
+    #     print(name, param.size())
+    #
+    # quit()
 
     for i in range(N_EPOCHS):
 
         epoch_init = time.time()
         pbar = tqdm(total=DATASET_LEN)
         for batch in dataloader_train:
-
             image_batch = batch["image"].to(device)
             text_batch = batch["bert_tokens"].to(device)
             hate_words_batch = batch["hate_words"].to(device)
@@ -357,19 +360,29 @@ if __name__ == '__main__':
 
         print("Epoch time elapsed:", epoch_end - epoch_init)
 
-        print("Saving full model to " + MODEL_SAVE)
-        torch.save(full_model.state_dict(), MODEL_SAVE)
+        #print("Saving full model to " + MODEL_SAVE)
+        #torch.save(full_model.state_dict(), MODEL_SAVE)
         print("Starting Validation")
 
         valid_init = time.time()
 
         full_model.eval()
+        full_model.text_feat_model.eval()
+        full_model.im_feat_model.eval()
         valid_acc, valid_loss = validate(dataloader_valid, criterion, device)
-
+        full_model.text_feat_model.train()
+        full_model.im_feat_model.train()
         full_model.train()
 
-        if valid_acc > best_acc:
+        valid_acc_np = valid_acc.cpu().numpy()
+
+        if valid_acc_np > best_acc:
+            print("Saving full model to " + MODEL_SAVE + ".best")
             torch.save(full_model.state_dict(), MODEL_SAVE + '.best')
+            logfile = open(MODEL_SAVE + ".best.log", "w")
+            best_acc = valid_acc_np
+            logfile.write("best_acc:" + str(valid_acc_np)+"\n" + "best epoch: " + str(i) + "\n")
+            logfile.close()
             best_acc = valid_acc
 
             accs = open("results/accuracys", "w")
