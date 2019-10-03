@@ -3,7 +3,6 @@ import torchvision
 from torch import nn
 from torchvision import transforms
 from torch.utils.data import DataLoader
-import torch.nn.functional as F
 
 
 from module import test
@@ -63,12 +62,9 @@ class MultimodalClassifier(nn.Module):
             features = torch.cat((features, image_features), dim=1)
 
         if self.USE_TEXT == 1:
-            #text_features = self.text_feat_model(text)
             last_hidden_states = self.text_feat_model(text)[0]
-            # averaging the bert outputs for each word
             text_features = torch.sum(last_hidden_states, dim=1)
             text_features = text_features / last_hidden_states.size()[1]
-            # print(text_features)
             features = torch.cat((features, text_features), dim=1)
 
         if self.USE_HATE_WORDS == 1:
@@ -83,25 +79,17 @@ class MultimodalClassifier(nn.Module):
 "Credit to https://gist.github.com/kyamagu/73ab34cbe12f3db807a314019062ad43"
 def accuracy(output, target):
     """Computes the accuracy for multiple binary predictions"""
-    # print(output)
     pred = output >= 0.5
-    # print(pred)
     truth = target >= 0.5
-    # print(truth)
     acc = pred.eq(truth).sum()
-    # print(acc)
     return acc
 
 "Credit to https://gist.github.com/kyamagu/73ab34cbe12f3db807a314019062ad43"
 def validAccuracy(output, target):
     """Computes the accuracy for multiple binary predictions"""
-    # print(output)
     pred = output >= 0.5
-    # print(pred)
     truth = target >= 0.5
-    # print(truth)
     acc = pred.eq(truth)
-    # print(acc)
     return acc
 
 TOP_SIZE = 20
@@ -112,7 +100,6 @@ def getLossFromTuple(item):
     return item[1]
 
 def validate(dataloader_valid, criterion, device):
-    # t = time.time()
 
     loss = 0
     acc = 0
@@ -124,8 +111,6 @@ def validate(dataloader_valid, criterion, device):
     fewer_losses = []
 
     for batch in dataloader_valid:
-
-        # print("loadtime, ", time.time() - t)
 
         image_batch = batch["image"].to(device)
         text_batch = batch["bert_tokens"].to(device)
@@ -166,7 +151,6 @@ def validate(dataloader_valid, criterion, device):
     valid_mse = loss/i
     print('acc', acc)
     print('i', i)
-    # t = time.time()
     return valid_acc, valid_mse
 
 
@@ -187,14 +171,9 @@ if __name__ == '__main__':
     VALID_METADATA_HATE = "hateMemesList.txt.valid"
     VALID_METADATA_GOOD = "redditMemesList.txt.valid"
     BASE_PATH = "data/train_data"
-    # MODEL_SAVE = "models/matching.pt"
-    # MODEL_SAVE = "models/matching_pretrained.pt"
+
     MODEL_SAVE = "models/classifier.pt"
 
-    # logname = "H100x4_IF1000v2"
-    # logname = "H100x4_matching_pretrained"
-    # logname = "logs_H50/H50x4_Dropoutv2"
-    # logname = "logs_H50/unfreeze_bert_textonly"
     logname = "logs_final_BS25/text2"
 
     # checkpoint = "models/unsupervised_pretrain.pt"
@@ -257,7 +236,6 @@ if __name__ == '__main__':
         full_model.load_state_dict(torch.load(checkpoint))
 
     full_model.to(device)
-    # print(full_model)
 
     # transform = transforms.Compose([test.Rescale((256, 256)),
     transform = transforms.Compose([test.Rescale((224, 224)),
@@ -301,12 +279,6 @@ if __name__ == '__main__':
     full_model.text_feat_model.train()
     full_model.im_feat_model.train()
 
-    # for name, param in full_model.im_feat_model.named_parameters():
-    #     #if param.requires_grad:
-    #     print(name, param.size())
-    #
-    # quit()
-
     for i in range(N_EPOCHS):
 
         epoch_init = time.time()
@@ -323,10 +295,7 @@ if __name__ == '__main__':
             optimizer.zero_grad()
             features_optimizer.zero_grad()
 
-            # forward_init = time.time()
             pred = full_model(image_batch, text_batch, hate_words_batch)
-            # forward_final = time.time()
-            # print("forward time: ", forward_final - forward_init)
 
             loss = criterion(pred, target_batch)
 
@@ -342,26 +311,12 @@ if __name__ == '__main__':
             iteration += 1
 
             pbar.update(BATCH_SIZE)
-            #
-            # break
-            #
-            # print(pred)
-            # pass
-
-        # print("total hate hate, ", HateWordsVector.total_hate_hate)
-        # print("total hate love, ", HateWordsVector.total_hate_love)
-        # print("total hate, ", HateWordsVector.total_hate_hate + HateWordsVector.total_hate_love)
-        # print("total sentences hate", HateWordsVector.total_sentences_hate)
-        # print("empty text", HateWordsVector.empty_text)
-        # quit()
 
 
         epoch_end = time.time()
 
         print("Epoch time elapsed:", epoch_end - epoch_init)
 
-        #print("Saving full model to " + MODEL_SAVE)
-        #torch.save(full_model.state_dict(), MODEL_SAVE)
         print("Starting Validation")
 
         valid_init = time.time()
@@ -388,12 +343,6 @@ if __name__ == '__main__':
             accs = open("results/accuracys", "w")
 
             accs.write("Smaller losses from best acc (epoch : " + str(i) + ")\n")
-            #
-            # global fewer_losses
-            # global top_losses
-            #
-            # print(fewer_losses)
-            # print(top_losses)
 
             for x in fewer_losses:
 
@@ -403,21 +352,15 @@ if __name__ == '__main__':
             for x in top_losses:
                 accs.write(str(x[0]) + "\t" + str(x[1]) + "\n")
 
-
             accs.close()
-
 
         valid_end = time.time()
         print("Time in validation:", valid_end - valid_init)
         writer.add_scalar('validation/valid_accuracy', valid_acc, i+1)
         writer.add_scalar('validation/valid_mse', valid_loss, i+1)
-        # print("Validation accuracy on epoch " + str(i) + ": ")
-        # break
-
 
     end_time = time.time()
     print("Elapsed Time:", end_time - start_time)
-
 
     accs.close()
 
