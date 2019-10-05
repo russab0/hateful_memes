@@ -162,7 +162,7 @@ if __name__ == '__main__':
 
     UNFREEZE_FEATURES = 999
 
-    USE_IMAGE = 0
+    USE_IMAGE = 1
     USE_TEXT = 1
     USE_HATE_WORDS = 0
 
@@ -174,7 +174,7 @@ if __name__ == '__main__':
 
     MODEL_SAVE = "models/classifier.pt"
 
-    logname = "logs_final_BS25/text2"
+    logname = "logs_final_BS25/multimodal3"
 
     # checkpoint = "models/unsupervised_pretrain.pt"
     checkpoint = None
@@ -187,12 +187,11 @@ if __name__ == '__main__':
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     print('device: ', device)
 
-
+    # Keywords (deprecated)
     hate_list = [
             'ali baba',
             'allah',
             'abbo',
-            # 'ape',
             'black',
             'bomb',
             'dynamite',
