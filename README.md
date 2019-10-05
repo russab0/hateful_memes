@@ -4,7 +4,7 @@ Deep Learning Applied to Hate Meme Detection
 
 Multimodal classification (text + image)
 
-###Usage
+### Usage
 
 #### Instalation
 The main dependencies for the project are Pytorch (visit pytorch.org for installation), torchvision, OpenCV, numpy, tqdm, tensorflow and tensorboardX.
