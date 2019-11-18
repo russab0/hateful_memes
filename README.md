@@ -58,3 +58,6 @@ A brief description of the most important parameters are:
 #### Testing
 The input format is the same as training. It will output a text file that contains the image path, the ground truth class and the prediction of the image, separated by spaces. 
 One example per line. 
+
+You can download a pretrained model from [here](https://imatge.upc.edu/web/sites/default/files/projects/language/public_html/2019-neuripsws-hatespeechdetection/multimodal_HS.pt):
+
