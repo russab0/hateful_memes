@@ -1,0 +1,5 @@
+venv
+.ipynb_checkpoints
+catboost_info
+/models/**/
+/data/**/
