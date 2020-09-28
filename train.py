@@ -4,7 +4,6 @@ from torch import nn
 from torchvision import transforms
 from torch.utils.data import DataLoader
 
-
 from module import test
 
 from pytorch_transformers import *
@@ -16,6 +15,12 @@ from tensorboardX import SummaryWriter
 from tqdm import tqdm
 import numpy as np
 
+from sklearn.metrics import f1_score, accuracy_score
+
+torch.manual_seed(0)
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False
+np.random.seed(0)
 
 class MultimodalClassifier(nn.Module):
     def __init__(self, image_feat_model, text_feat_model, TOTAL_FEATURES,
@@ -43,7 +48,6 @@ class MultimodalClassifier(nn.Module):
         )
 
         self.device = device
-
 
     def forward(self, image, text, hate_words):
 
@@ -76,31 +80,36 @@ class MultimodalClassifier(nn.Module):
 
         return out
 
-"Credit to https://gist.github.com/kyamagu/73ab34cbe12f3db807a314019062ad43"
+
 def accuracy(output, target):
     """Computes the accuracy for multiple binary predictions"""
-    pred = output >= 0.5
-    truth = target >= 0.5
+    "Credit to https://gist.github.com/kyamagu/73ab34cbe12f3db807a314019062ad43"
+
+    pred = output.flatten() >= 0.5
+    truth = target.flatten() >= 0.5
     acc = pred.eq(truth).sum()
     return acc
 
-"Credit to https://gist.github.com/kyamagu/73ab34cbe12f3db807a314019062ad43"
+
 def validAccuracy(output, target):
     """Computes the accuracy for multiple binary predictions"""
-    pred = output >= 0.5
-    truth = target >= 0.5
+    "Credit to https://gist.github.com/kyamagu/73ab34cbe12f3db807a314019062ad43"
+    pred = output.flatten() >= 0.5
+    truth = target.flatten() >= 0.5
     acc = pred.eq(truth)
     return acc
+
 
 TOP_SIZE = 20
 top_losses = []
 fewer_losses = []
 
+
 def getLossFromTuple(item):
     return item[1]
 
-def validate(dataloader_valid, criterion, device):
 
+def validate(dataloader_valid, criterion, device, verbose=False):
     loss = 0
     acc = 0
     i = 0
@@ -109,8 +118,15 @@ def validate(dataloader_valid, criterion, device):
 
     top_losses = []
     fewer_losses = []
+    all_predictions = []
+    all_labels = []
 
+    q = 0
     for batch in dataloader_valid:
+        #print(q, '/', len(dataloader_valid))
+        q += 1
+        #if q == 3:
+        #   break
 
         image_batch = batch["image"].to(device)
         text_batch = batch["bert_tokens"].to(device)
@@ -120,45 +136,65 @@ def validate(dataloader_valid, criterion, device):
         target_batch = batch["class"].to(device)
         target_batch = target_batch.unsqueeze(1)
 
-
-
         with torch.no_grad():
 
             pred = full_model(image_batch, text_batch, hate_words_batch)
+            all_labels.append(target_batch)
+            all_predictions.append(pred)
 
             distances = (pred - target_batch) ** 2
-
+            # distances = torch.sum(distances)
+            #print(type(distances), len(distances), distances.shape)
+            #print(torch.sum(distances, dim=0))
+            #print(torch.sum(distances, dim=1))
             kk = validAccuracy(pred, target_batch)
+            #print(len(pred), len(target_batch))
             acc += kk.sum()
+            if i != 0:
+                print(i, ':', acc / i)
+            #print(kk, kk.sum())
+
 
             for j, x in enumerate(distances):
                 top_losses.append([paths_batch[j], x])
                 fewer_losses.append([paths_batch[j], x])
 
-            top_losses.sort(key=getLossFromTuple, reverse=True)
-            fewer_losses.sort(key=getLossFromTuple, reverse=False)
+            # top_losses.sort(key=lambda _: getLossFromTuple(_), reverse=True) TODO fix
+            # fewer_losses.sort(key=lambda _: getLossFromTuple(_), reverse=False) TODO fix
 
             top_losses = top_losses[:TOP_SIZE]
             fewer_losses = fewer_losses[:TOP_SIZE]
 
             size = target_batch.numel()
-            loss += criterion(pred, target_batch) * size
+            loss += float(criterion(pred, target_batch.reshape(-1, 1)) * size)
 
             i += target_batch.numel()
 
+            # ADDED
+            #print(paths_batch)
+            #print(all_predictions.cpu().reshape(len(all_predictions), -1)[0], all_labels.cpu().reshape(len(all_labels), -1)[0])
+            #all_predictions_copy = (torch.cat(all_predictions.copy()).cpu() >= 0.5).flatten()
+            #all_labels_copy = (torch.cat(all_labels.copy()).cpu() >= 0.5).flatten()
+            #print(f'Real F1: {f1_score(all_labels_copy, all_predictions_copy)}')
+            #print(f'Real Acc: {accuracy_score(all_labels_copy, all_predictions_copy)}')
 
-    valid_acc = acc.float()/i
-    valid_mse = loss/i
-    print('acc', acc)
-    print('i', i)
+    valid_acc = acc.float() / i
+    valid_mse = loss / i
+
+    all_predictions_copy = (torch.cat(all_predictions).cpu() >= 0.5).flatten()
+    all_labels_copy = (torch.cat(all_labels).cpu() >= 0.5).flatten()
+    #print(valid_acc)
+    print(f'Real F1: {f1_score(all_labels_copy, all_predictions_copy)}')
+    print(f'Real Acc: {accuracy_score(all_labels_copy, all_predictions_copy)}')
+
     return valid_acc, valid_mse
 
 
 if __name__ == '__main__':
 
-    HIDDEN_SIZE = 50
-    N_EPOCHS = 100
-    BATCH_SIZE = 25
+    HIDDEN_SIZE = 50  # TODO was 50
+    N_EPOCHS = 15  # TODO was 100
+    BATCH_SIZE = 12  # TODO was 25
 
     UNFREEZE_FEATURES = 999
 
@@ -170,39 +206,38 @@ if __name__ == '__main__':
     TRAIN_METADATA_GOOD = "redditMemesList.txt.train"
     VALID_METADATA_HATE = "hateMemesList.txt.valid"
     VALID_METADATA_GOOD = "redditMemesList.txt.valid"
-    BASE_PATH = "data/train_data"
-
-    MODEL_SAVE = "models/classifier.pt"
+    BASE_PATH = "data/prepared"
 
     logname = "logs_final_BS25/multimodal3"
 
-    # checkpoint = "models/unsupervised_pretrain.pt"
-    checkpoint = None
-
+    checkpoint, to_train, MODEL_SAVE = "models/multimodal_HS.pt", True, "models/multimodal_HS.pt"
+    # checkpoint, to_train, MODEL_SAVE = "models/classifier.pt.best", True, "models/classifier.pt.best"
+    # checkpoint = None
+    print(checkpoint)
 
     start_time = time.time()
     writer = SummaryWriter("logs/" + logname)
 
     # Configuring CUDA / CPU execution
-    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+    FORCE_CPU = True
+    device = torch.device('cuda:0' if torch.cuda.is_available() and not FORCE_CPU else 'cpu')
     print('device: ', device)
 
     # Keywords (deprecated)
     hate_list = [
-            'ali baba',
-            'allah',
-            'abbo',
-            'black',
-            'bomb',
-            'dynamite',
-            'jew',
-            'nazi',
-            'niglet',
-            'nigger',
-            'nigga',
-            'paki',
-        ]
-
+        'ali baba',
+        'allah',
+        'abbo',
+        'black',
+        'bomb',
+        'dynamite',
+        'jew',
+        'nazi',
+        'niglet',
+        'nigger',
+        'nigga',
+        'paki',
+    ]
 
     # Get image descriptor
     VGG16_features = torchvision.models.vgg16(pretrained=True)
@@ -223,7 +258,7 @@ if __name__ == '__main__':
     TEXT_FEATURES = 768
     HATE_WORDS = len(hate_list)
 
-    IMAGE_AND_TEXT_FEATURES = IMAGE_FEATURES * USE_IMAGE + TEXT_FEATURES * USE_TEXT\
+    IMAGE_AND_TEXT_FEATURES = IMAGE_FEATURES * USE_IMAGE + TEXT_FEATURES * USE_TEXT \
                               + HATE_WORDS * USE_HATE_WORDS
 
     full_model = MultimodalClassifier(VGG16_features, bert_model,
@@ -232,7 +267,7 @@ if __name__ == '__main__':
                                       device)
 
     if checkpoint is not None:
-        full_model.load_state_dict(torch.load(checkpoint))
+        full_model.load_state_dict(torch.load(checkpoint, map_location=device))
 
     full_model.to(device)
 
@@ -244,13 +279,13 @@ if __name__ == '__main__':
                                     test.ToTensor()])
 
     transformValid = transforms.Compose([test.Rescale((224, 224)),
-                                    # test.RandomCrop(224),
-                                    test.HateWordsVector(hate_list),
-                                    test.Tokenize(tokenizer),
-                                    test.ToTensor()])
+                                         # test.RandomCrop(224),
+                                         test.HateWordsVector(hate_list),
+                                         test.Tokenize(tokenizer),
+                                         test.ToTensor()])
 
-    train_dataset = test.ImagesDataLoader(TRAIN_METADATA_GOOD, TRAIN_METADATA_HATE, BASE_PATH, transform)
-    valid_dataset = test.ImagesDataLoader(VALID_METADATA_GOOD, VALID_METADATA_HATE, BASE_PATH, transformValid)
+    train_dataset = test.ImagesDataLoader('train.jsonl', BASE_PATH, transform)
+    valid_dataset = test.ImagesDataLoader('dev.jsonl', BASE_PATH, transformValid)
     # train_dataset = test.ImageTextMatcherDataLoader(TRAIN_METADATA_GOOD, TRAIN_METADATA_HATE, BASE_PATH, transform)
     # valid_dataset = test.ImageTextMatcherDataLoader(VALID_METADATA_GOOD, VALID_METADATA_HATE, BASE_PATH, transformValid)
 
@@ -258,7 +293,6 @@ if __name__ == '__main__':
 
     dataloader_train = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, collate_fn=test.custom_collate)
     dataloader_valid = DataLoader(valid_dataset, batch_size=BATCH_SIZE, shuffle=True, collate_fn=test.custom_collate)
-
 
     # criterion = nn.CrossEntropyLoss()
     criterion = nn.MSELoss()
@@ -271,96 +305,100 @@ if __name__ == '__main__':
     # features_optimizer = torch.optim.Adam(feature_parameters)
     features_optimizer = torch.optim.Adam(VGG16_features.classifier.parameters())
 
-
     iteration = 0
 
     best_acc = np.array(-1.00)
     full_model.text_feat_model.train()
     full_model.im_feat_model.train()
 
-    for i in range(N_EPOCHS):
+    if checkpoint is None or to_train:
+        for i in range(N_EPOCHS):
 
-        epoch_init = time.time()
-        pbar = tqdm(total=DATASET_LEN)
-        for batch in dataloader_train:
-            image_batch = batch["image"].to(device)
-            text_batch = batch["bert_tokens"].to(device)
-            hate_words_batch = batch["hate_words"].to(device)
+            epoch_init = time.time()
+            pbar = tqdm(total=DATASET_LEN)
+            for batch in dataloader_train:
+                image_batch = batch["image"].to(device)
+                text_batch = batch["bert_tokens"].to(device)
+                hate_words_batch = batch["hate_words"].to(device)
 
-            target_batch = batch["class"].to(device)
+                target_batch = batch["class"].to(device)
 
-            target_batch = target_batch.unsqueeze(1)
+                target_batch = target_batch.unsqueeze(1)
 
-            optimizer.zero_grad()
-            features_optimizer.zero_grad()
+                optimizer.zero_grad()
+                features_optimizer.zero_grad()
 
-            pred = full_model(image_batch, text_batch, hate_words_batch)
+                pred = full_model(image_batch, text_batch, hate_words_batch)
 
-            loss = criterion(pred, target_batch)
+                # print(pred.shape, pred)
+                # print(target_batch.shape, target_batch)
+                loss = criterion(pred, target_batch.reshape(-1, 1))
 
-            loss.backward()
+                loss.backward()
 
+                optimizer.step()
 
-            optimizer.step()
+                if i >= UNFREEZE_FEATURES:
+                    features_optimizer.step()
 
-            if i >= UNFREEZE_FEATURES:
-                features_optimizer.step()
+                writer.add_scalar('train/mse', loss, iteration * BATCH_SIZE)
+                iteration += 1
 
-            writer.add_scalar('train/mse', loss, iteration*BATCH_SIZE)
-            iteration += 1
+                pbar.update(BATCH_SIZE)
 
-            pbar.update(BATCH_SIZE)
+            epoch_end = time.time()
 
+            print("Epoch time elapsed:", epoch_end - epoch_init)
 
-        epoch_end = time.time()
+            print("Starting Validation")
 
-        print("Epoch time elapsed:", epoch_end - epoch_init)
+            valid_init = time.time()
 
-        print("Starting Validation")
+            full_model.eval()
+            full_model.text_feat_model.eval()
+            full_model.im_feat_model.eval()
+            valid_acc, valid_loss = validate(dataloader_valid, criterion, device)
+            full_model.text_feat_model.train()
+            full_model.im_feat_model.train()
+            full_model.train()
 
-        valid_init = time.time()
+            valid_acc_np = valid_acc.cpu().numpy()
 
+            if valid_acc_np > best_acc:
+                print("Saving full model to " + MODEL_SAVE + ".best")
+                torch.save(full_model.state_dict(), MODEL_SAVE + '.best')
+                logfile = open(MODEL_SAVE + ".best.log", "w")
+                best_acc = valid_acc_np
+                logfile.write("best_acc:" + str(valid_acc_np) + "\n" + "best epoch: " + str(i) + "\n")
+                logfile.close()
+                best_acc = valid_acc
+
+                accs = open("results/accuracys", "w")
+
+                accs.write("Smaller losses from best acc (epoch : " + str(i) + ")\n")
+
+                for x in fewer_losses:
+                    accs.write(str(x[0]) + "\t" + str(x[1]) + "\n")
+
+                accs.write("Top Loss:\n")
+                for x in top_losses:
+                    accs.write(str(x[0]) + "\t" + str(x[1]) + "\n")
+
+                accs.close()
+
+            valid_end = time.time()
+            print("Time in validation:", valid_end - valid_init)
+            writer.add_scalar('validation/valid_accuracy', valid_acc, i + 1)
+            writer.add_scalar('validation/valid_mse', valid_loss, i + 1)
+    else:
         full_model.eval()
         full_model.text_feat_model.eval()
         full_model.im_feat_model.eval()
         valid_acc, valid_loss = validate(dataloader_valid, criterion, device)
-        full_model.text_feat_model.train()
-        full_model.im_feat_model.train()
-        full_model.train()
-
-        valid_acc_np = valid_acc.cpu().numpy()
-
-        if valid_acc_np > best_acc:
-            print("Saving full model to " + MODEL_SAVE + ".best")
-            torch.save(full_model.state_dict(), MODEL_SAVE + '.best')
-            logfile = open(MODEL_SAVE + ".best.log", "w")
-            best_acc = valid_acc_np
-            logfile.write("best_acc:" + str(valid_acc_np)+"\n" + "best epoch: " + str(i) + "\n")
-            logfile.close()
-            best_acc = valid_acc
-
-            accs = open("results/accuracys", "w")
-
-            accs.write("Smaller losses from best acc (epoch : " + str(i) + ")\n")
-
-            for x in fewer_losses:
-
-                accs.write(str(x[0]) + "\t" + str(x[1]) + "\n")
-
-            accs.write("Top Loss:\n")
-            for x in top_losses:
-                accs.write(str(x[0]) + "\t" + str(x[1]) + "\n")
-
-            accs.close()
-
-        valid_end = time.time()
-        print("Time in validation:", valid_end - valid_init)
-        writer.add_scalar('validation/valid_accuracy', valid_acc, i+1)
-        writer.add_scalar('validation/valid_mse', valid_loss, i+1)
 
     end_time = time.time()
     print("Elapsed Time:", end_time - start_time)
 
-    accs.close()
+    # accs.close()
 
     writer.close()

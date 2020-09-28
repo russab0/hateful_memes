@@ -1,7 +1,7 @@
-
 from torchvision import transforms
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
+import pandas as pd
 import cv2
 import pytesseract
 import numpy as np
@@ -9,30 +9,33 @@ import torch
 import time
 import random
 
+to_tensor = transforms.ToTensor()
+
+
 class ToTensor(object):
     """Convert ndarrays in sample to Tensors."""
 
     def __call__(self, sample):
-
         image, bert_tokens, hate = sample['image'], sample["bert_tokens"], sample['class']
 
         # swap color axis because
         # numpy image: H x W x C
         # torch image: C X H X W
-        image = image.transpose((2, 0, 1))
+        """image = image.transpose((2, 0, 1))
 
         image = torch.from_numpy(image)
         image = image.float()
-        image /= 255
-
-        bert_tokens = torch.tensor(bert_tokens, dtype=torch.long)
-        hate = torch.tensor(hate)
+        image /= 255"""
+        image = to_tensor(image)
+        bert_tokens = torch.LongTensor(bert_tokens)  # torch.tensor(bert_tokens, dtype=torch.long)
+        hate = torch.FloatTensor(hate)  # torch.tensor(hate)
 
         sample["image"] = image
         sample["bert_tokens"] = bert_tokens
         sample["class"] = hate
 
         return sample
+
 
 class RandomCrop(object):
     """Crop randomly the image in a sample.
@@ -60,7 +63,7 @@ class RandomCrop(object):
         left = np.random.randint(0, w - new_w)
 
         image = image[top: top + new_h,
-                      left: left + new_w]
+                left: left + new_w]
 
         # landmarks = landmarks - [left, top]
         sample["image"] = image
@@ -82,36 +85,29 @@ class Rescale(object):
         self.output_size = output_size
 
     def __call__(self, sample):
-
         image = sample["image"]
         image = cv2.resize(image, self.output_size, interpolation=cv2.INTER_CUBIC)
         sample["image"] = image
 
         return sample
 
+
 class Tokenize(object):
 
     def __init__(self, tokenizer):
-
         self.tokenizer = tokenizer
 
     def __call__(self, sample):
-        # print("\nnew text")
-        # print(sample["text"])
         tokens = self.tokenizer.tokenize(sample["text"])
-        # print(tokens)
 
         tokens = tokens[:48]
         tokens = ["[CLS]"] + tokens + ["[SEP]"]
-        # print(tokens)
         input_ids = self.tokenizer.convert_tokens_to_ids(tokens)
 
-        # print(input_ids)
-        # self.dataloader.max_length = max(self.dataloader.max_length, len(input_ids))
-        # print(input_ids)
         sample["bert_tokens"] = input_ids
 
         return sample
+
 
 class HateWordsVector(object):
 
@@ -134,12 +130,11 @@ class HateWordsVector(object):
 
         hate_found = False
 
-
         for i in range(N):
             if self.hateWords[i] in text:
                 vector[i] = 1
-                self.total_hate_hate += sample["class"]
-                self.total_hate_hate += 1 - sample["class"]
+                self.total_hate_hate += sample["class"][0]  # TODO converting labels to list
+                self.total_hate_hate += 1 - sample["class"][0]  # TODO converting labels to list
 
                 hate_found = True
 
@@ -151,147 +146,28 @@ class HateWordsVector(object):
         return sample
 
 
-
-
 class ImagesDataLoader(Dataset):
-    def __init__(self, love_metadata, hate_metadata, base_path, transform=None):
 
-
-        ## Keys:
-        # image
-        # text
-        # bert_tokens
-        # hate_words
-
-        # class
-
+    def __init__(self, metadata, base_path, transform=None, max_amount=1000):
         self.transform = transform
         self.base_path = base_path
-
-        love_paths = list(open(base_path + "/" + love_metadata))
-        hate_paths = list(open(base_path + "/" + hate_metadata))
-
-        love_paths = [[x.strip("\n"), 0.0] for x in love_paths]
-        hate_paths = [[x.strip("\n"), 1.0] for x in hate_paths]
-
-        self.data = love_paths + hate_paths
+        print(base_path + '/' + metadata)
+        self.data = pd.read_json(base_path + '/' + metadata, lines=True)
 
     def __len__(self):
-
-        return len(self.data)
-
-
-    def __getitem__(self, index):
-
-        # t = time.time()
-        image_path = self.data[index][0]
-
-        path = self.base_path + "/" + image_path
-        text_path = path + ".ocr"
-        # print(path)
-        t = time.time()
-        image = cv2.imread(path)
-        # print("imread:", time.time() - t)
-        # t = time.time()
-
-        assert image is not None
-
-        try:
-            text = open(text_path)
-            text = text.read()
-        except:
-            text = pytesseract.image_to_string(image, config='--oem 1')
-            # print("pytesseract time, ", time.time() - t)
-            print("WARNING: PREVIOUS OCR EXTRACTION NOT FOUND. THIS SLOWS DOWN THE DATA LOADING by 2000%")
-        text = text.replace("\n", " ")
-        # print(text)
-
-        hate = self.data[index][1]
-
-        sample = {'image': image, "image_path": image_path, "text": text, "class": hate, "image_path": path}
-
-        if self.transform:
-            sample = self.transform(sample)
-
-        return sample
-
-
-class ImageTextMatcherDataLoader(Dataset):
-    def __init__(self, love_metadata, hate_metadata, base_path, transform=None, max_amount = 1000):
-
-
-        ## Keys:
-        # image
-        # text
-        # bert_tokens
-        # hate_words
-
-        # class
-
-        self.transform = transform
-        self.base_path = base_path
-
-        love_paths = list(open(base_path + "/" + love_metadata))
-        hate_paths = list(open(base_path + "/" + hate_metadata))
-
-        total = []
-
-        for x in hate_paths:
-            # print(x)
-            x = x.strip("\n")
-
-            y = random.choice(love_paths)
-            # print(y)
-            y = y.strip("\n")
-
-            total.append([x, x+'.ocr', 0.0])
-            total.append([x, y+'.ocr', 1.0])
-
-        for x in love_paths:
-            x = x.strip("\n")
-
-            y = random.choice(hate_paths)
-            y = y.strip("\n")
-
-            total.append([x, x + '.ocr', 0.0])
-            total.append([x, y + '.ocr', 1.0])
-
-        self.data = total
-
-
-
-
-    def __len__(self):
-
         return len(self.data)
 
     def __getitem__(self, index):
+        img_path = self.base_path + "/" + self.data.at[index, 'img']
+        text = self.data.at[index, 'text']
+        label = self.data.at[index, 'label']
 
-        # t = time.time()
-
-        path = self.base_path + "/" + self.data[index][0]
-        text_path = self.base_path + "/" + self.data[index][1]
-        # print(path)
-        image = cv2.imread(path)
-        # print("imread:", time.time() - t)
-        # t = time.time()
+        image = cv2.imread(img_path)
 
         assert image is not None
 
-        try:
-            text = open(text_path)
-            text = text.read()
-        except:
-            text = pytesseract.image_to_string(image, config='--oem 1')
-            # print("pytesseract time, ", time.time() - t)
-            print("WARNING: PREVIOUS OCR EXTRACTION NOT FOUND. THIS SLOWS DOWN THE DATA LOADING by 2000%")
-            print(text_path)
         text = text.replace("\n", " ")
-        # print(text)
-
-        hate = self.data[index][2]
-
-        sample = {'image': image, "text": text, "class": hate}
+        sample = {'image': image, "text": text, "class": [label], "image_path": img_path}  # TODO [label] ???
 
         if self.transform:
             sample = self.transform(sample)
@@ -300,28 +176,18 @@ class ImageTextMatcherDataLoader(Dataset):
 
 
 class UnsupervisedMatcherDataLoader(Dataset):
-    def __init__(self, metadata, base_path, transform=None, max_amount = 1000):
-
-
-        ## Keys:
-        # image
-        # text
-        # bert_tokens
-        # hate_words
-
-        # class
+    def __init__(self, metadata, base_path, transform=None, max_amount=1000):
 
         self.transform = transform
         self.base_path = base_path
 
-        paths = list(open(base_path + "/" + metadata))
+        paths = [f"{base_path}/{path}" for path in meta]
 
         total = []
 
         for x in paths:
             x = x.strip("\n")
             total.append([x, x + '.ocr', 0.0])
-
 
             for i in range(1):
                 y = random.choice(paths)
@@ -330,21 +196,14 @@ class UnsupervisedMatcherDataLoader(Dataset):
 
         self.data = total
 
-
     def __len__(self):
 
         return len(self.data)
 
     def __getitem__(self, index):
-
-        # t = time.time()
-
         path = self.base_path + "/" + self.data[index][0]
         text_path = self.base_path + "/" + self.data[index][1]
-        # print(path)
         image = cv2.imread(path)
-        # print("imread:", time.time() - t)
-        # t = time.time()
 
         assert image is not None
 
@@ -353,11 +212,9 @@ class UnsupervisedMatcherDataLoader(Dataset):
             text = text.read()
         except:
             text = pytesseract.image_to_string(image, config='--oem 1')
-            # print("pytesseract time, ", time.time() - t)
             print("WARNING: PREVIOUS OCR EXTRACTION NOT FOUND. THIS SLOWS DOWN THE DATA LOADING by 2000%")
             print(text_path)
         text = text.replace("\n", " ")
-        # print(text)
 
         hate = self.data[index][2]
 
@@ -368,13 +225,13 @@ class UnsupervisedMatcherDataLoader(Dataset):
 
         return sample
 
+
 def custom_collate(batch):
-
-
-    batch2 = {"image": batch[0]["image"].unsqueeze(0),
-              "class": batch[0]["class"].unsqueeze(0),
-              "hate_words": batch[0]["hate_words"].unsqueeze(0),
-              }
+    batch2 = {
+        "image": batch[0]["image"].unsqueeze(0),
+        "class": batch[0]["class"].unsqueeze(0),
+        "hate_words": batch[0]["hate_words"].unsqueeze(0),
+    }
 
     image_paths = [x["image_path"] for x in batch]
 
@@ -396,11 +253,6 @@ def custom_collate(batch):
         print(tokens)
         quit()
 
-    # print(batch2["bert_tokens"])
-
     del batch
 
     return batch2
-
-
-
