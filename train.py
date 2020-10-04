@@ -17,10 +17,13 @@ import numpy as np
 
 from sklearn.metrics import f1_score, accuracy_score
 
+from transformers import AutoTokenizer, AutoModelForSequenceClassification
+
 torch.manual_seed(0)
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
 np.random.seed(0)
+
 
 class MultimodalClassifier(nn.Module):
     def __init__(self, image_feat_model, text_feat_model, TOTAL_FEATURES,
@@ -123,10 +126,7 @@ def validate(dataloader_valid, criterion, device, verbose=False):
 
     q = 0
     for batch in dataloader_valid:
-        #print(q, '/', len(dataloader_valid))
         q += 1
-        #if q == 3:
-        #   break
 
         image_batch = batch["image"].to(device)
         text_batch = batch["bert_tokens"].to(device)
@@ -143,24 +143,17 @@ def validate(dataloader_valid, criterion, device, verbose=False):
             all_predictions.append(pred)
 
             distances = (pred - target_batch) ** 2
-            # distances = torch.sum(distances)
-            #print(type(distances), len(distances), distances.shape)
-            #print(torch.sum(distances, dim=0))
-            #print(torch.sum(distances, dim=1))
             kk = validAccuracy(pred, target_batch)
-            #print(len(pred), len(target_batch))
             acc += kk.sum()
             if i != 0:
                 print(i, ':', acc / i)
-            #print(kk, kk.sum())
-
 
             for j, x in enumerate(distances):
                 top_losses.append([paths_batch[j], x])
                 fewer_losses.append([paths_batch[j], x])
 
-            # top_losses.sort(key=lambda _: getLossFromTuple(_), reverse=True) TODO fix
-            # fewer_losses.sort(key=lambda _: getLossFromTuple(_), reverse=False) TODO fix
+            # top_losses.sort(key=lambda _: getLossFromTuple(_), reverse=True) TO DO fix
+            # fewer_losses.sort(key=lambda _: getLossFromTuple(_), reverse=False) TO DO fix
 
             top_losses = top_losses[:TOP_SIZE]
             fewer_losses = fewer_losses[:TOP_SIZE]
@@ -171,19 +164,19 @@ def validate(dataloader_valid, criterion, device, verbose=False):
             i += target_batch.numel()
 
             # ADDED
-            #print(paths_batch)
-            #print(all_predictions.cpu().reshape(len(all_predictions), -1)[0], all_labels.cpu().reshape(len(all_labels), -1)[0])
-            #all_predictions_copy = (torch.cat(all_predictions.copy()).cpu() >= 0.5).flatten()
-            #all_labels_copy = (torch.cat(all_labels.copy()).cpu() >= 0.5).flatten()
-            #print(f'Real F1: {f1_score(all_labels_copy, all_predictions_copy)}')
-            #print(f'Real Acc: {accuracy_score(all_labels_copy, all_predictions_copy)}')
+            # print(paths_batch)
+            # print(all_predictions.cpu().reshape(len(all_predictions), -1)[0], all_labels.cpu().reshape(len(all_labels), -1)[0])
+            # all_predictions_copy = (torch.cat(all_predictions.copy()).cpu() >= 0.5).flatten()
+            # all_labels_copy = (torch.cat(all_labels.copy()).cpu() >= 0.5).flatten()
+            # print(f'Real F1: {f1_score(all_labels_copy, all_predictions_copy)}')
+            # print(f'Real Acc: {accuracy_score(all_labels_copy, all_predictions_copy)}')
 
     valid_acc = acc.float() / i
     valid_mse = loss / i
 
     all_predictions_copy = (torch.cat(all_predictions).cpu() >= 0.5).flatten()
     all_labels_copy = (torch.cat(all_labels).cpu() >= 0.5).flatten()
-    #print(valid_acc)
+    # print(valid_acc)
     print(f'Real F1: {f1_score(all_labels_copy, all_predictions_copy)}')
     print(f'Real Acc: {accuracy_score(all_labels_copy, all_predictions_copy)}')
 
@@ -202,24 +195,20 @@ if __name__ == '__main__':
     USE_TEXT = 1
     USE_HATE_WORDS = 0
 
-    TRAIN_METADATA_HATE = "hateMemesList.txt.train"
-    TRAIN_METADATA_GOOD = "redditMemesList.txt.train"
-    VALID_METADATA_HATE = "hateMemesList.txt.valid"
-    VALID_METADATA_GOOD = "redditMemesList.txt.valid"
     BASE_PATH = "data/prepared"
-
     logname = "logs_final_BS25/multimodal3"
 
-    checkpoint, to_train, MODEL_SAVE = "models/multimodal_HS.pt", True, "models/multimodal_HS.pt"
+    # checkpoint, to_train, MODEL_SAVE = "models/multimodal_HS.pt", True, "models/multimodal_HS.pt"
     # checkpoint, to_train, MODEL_SAVE = "models/classifier.pt.best", True, "models/classifier.pt.best"
-    # checkpoint = None
-    print(checkpoint)
+    checkpoint, to_train, MODEL_SAVE = None, True, "models/dehate_vgg.pt"
+    APPLY_DEHATE_BERT = True
+    print(checkpoint, 'to_train', to_train, MODEL_SAVE, 'apply_dehate', APPLY_DEHATE_BERT)
 
     start_time = time.time()
     writer = SummaryWriter("logs/" + logname)
 
     # Configuring CUDA / CPU execution
-    FORCE_CPU = True
+    FORCE_CPU = False
     device = torch.device('cuda:0' if torch.cuda.is_available() and not FORCE_CPU else 'cpu')
     print('device: ', device)
 
@@ -246,10 +235,16 @@ if __name__ == '__main__':
     VGG16_features.to(device)
 
     # To embed text, we use a Pytorch implementation of BERT: Using pythorch BERT implementation from https://github.com/huggingface/pytorch-pretrained-BERT
-    # Get Textual Tokenizer
-    tokenizer = BertTokenizer.from_pretrained("bert-base-multilingual-cased")
-    # Get Textual Embedding.
-    bert_model = BertModel.from_pretrained("bert-base-multilingual-cased")
+    if APPLY_DEHATE_BERT:
+        tokenizer = AutoTokenizer.from_pretrained("Hate-speech-CNERG/dehatebert-mono-english")
+        bert_model = AutoModelForSequenceClassification.from_pretrained("Hate-speech-CNERG/dehatebert-mono-english")
+        bert_model.modules()
+        removed = list(bert_model.children())[:-2]  # remove two last layers
+        bert_model = torch.nn.Sequential(*removed)
+    else:
+        tokenizer = BertTokenizer.from_pretrained("bert-base-multilingual-cased")
+        bert_model = BertModel.from_pretrained("bert-base-multilingual-cased")
+
     bert_model.eval()
     bert_model.to(device)
 
